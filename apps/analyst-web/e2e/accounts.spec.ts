@@ -74,7 +74,7 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(page).toHaveURL(`${origin}/login`);
   await page.reload();
   await signIn(page, username, initialPassword);
-  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Create user" })).toHaveCount(0);
   await page.goto(`${origin}/workspace/users/new`);
   await expect(createUser).toHaveCount(0);

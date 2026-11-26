@@ -17,7 +17,8 @@
     "pending": "Signing in…"
   },
   "Workspace": {
-    "title": "Reconciliation workspace",
+    "menu": "Menu",
+    "navigation": "Workspace navigation",
     "footerDescription": "Transaction reconciliation",
     "unavailable": "Workspace unavailable",
     "sessionUnavailable": "Your session could not be verified. Reload the page to try again.",
