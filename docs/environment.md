@@ -25,3 +25,11 @@ In both modes, Compose publishes PostgreSQL on a dynamically assigned port on `1
 `BACKEND_API_ORIGIN` is the Go API URL used by the Next.js server. It defaults to `http://backend:8080` under Compose, including when the API is published on a custom host port. With `mise run analyst-web:dev`, it defaults to `http://localhost:<RECONCILIATION_API_PORT>`. An explicit value in `apps/analyst-web/.env` applies in both modes.
 
 `WEB_ORIGIN` is the address used by the browser. It defaults to `http://localhost` on the configured `ANALYST_WEB_PORT`. Set it to the browser-facing scheme, hostname, and port when opening the app from another origin, such as `http://127.0.0.1:3001`. The frontend checks that browser login and other writes originate at that address.
+
+## Tests
+
+`mise run test` runs the Go suite and starts PostgreSQL through Testcontainers. It uses the active Docker CLI endpoint for `CONTAINER_ENGINE=docker` and the Podman Compose-compatible endpoint for `CONTAINER_ENGINE=podman`. Start the selected daemon, API service, or machine first. With a custom Podman socket, export its `unix://` URL as `DOCKER_HOST`. Clear any conflicting `tc.host` in `~/.testcontainers.properties` so Testcontainers uses the selected endpoint. If Ryuk cannot access the Podman socket, set `TESTCONTAINERS_RYUK_DISABLED=true`. The tests each register cleanup for their PostgreSQL containers.
+
+Install web dependencies with `mise run web:install` and Playwright Chromium with `mise run browser:install`. Run `mise run smoke` for the browser workflow or `RECONCILIO_SMOKE_RANKING=true mise run smoke` for the controlled ranking workflow. Both use Docker Compose on the selected engine.
+
+Smoke tests run in their own Compose project with disposable PostgreSQL credentials, a separate volume, and test ports. The API port is dynamically assigned. The frontend uses a free loopback port or the `RECONCILIO_SMOKE_PORT` override. Smoke uses its own service settings and the ranking variant uses a local provider. Each run removes its containers, network, and database volume when it exits, so the worktree stack and its data remain available.
