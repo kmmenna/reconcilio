@@ -7,8 +7,9 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { csvColumns, type FinancialAccount, type ImportPreview, type ImportProblem, type Source } from "@/lib/imports";
+import { csvColumns, type FinancialAccount, type ImportView, type ImportProblem, type Source } from "@/lib/imports";
 import type importMessages from "@/messages/imports.en.json";
+import { CoverageOverlap } from "./coverage-overlap";
 import { ImportDateField } from "./import-date-field";
 
 type Field = keyof typeof importMessages.fields;
@@ -50,7 +51,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
         setProblem(await response.json() as ImportProblem);
         return;
       }
-      const preview = await response.json() as ImportPreview;
+      const preview = await response.json() as ImportView;
       router.push(`/workspace/imports/${encodeURIComponent(preview.id)}`);
     } catch {
       setProblem({ code: "preview_unavailable" });
@@ -133,6 +134,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
           <p className="font-semibold">
             {t(t.has(`problems.${problem.code as ProblemCode}`) ? `problems.${problem.code as ProblemCode}` : "problems.preview_unavailable")}
           </p>
+          {problem.context?.coverage && <CoverageOverlap coverage={problem.context.coverage} />}
           {problem.issues?.length ? (
             <ul className="mt-2 space-y-2">
               {problem.issues.map(({ line, field, reason }, index) => {

@@ -11,8 +11,9 @@ import (
 // Problem describes an HTTP failure with a machine-readable code.
 type Problem struct {
 	huma.ErrorModel
-	Code   string  `json:"code"`
-	Issues []Issue `json:"issues,omitempty"`
+	Code    string  `json:"code"`
+	Issues  []Issue `json:"issues,omitempty"`
+	Context any     `json:"context,omitempty"`
 }
 
 // Issue identifies a failed input field and, for CSV data, its physical line.

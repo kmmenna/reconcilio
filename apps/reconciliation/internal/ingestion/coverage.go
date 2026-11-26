@@ -1,0 +1,42 @@
+package ingestion
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
+)
+
+type coverageOverlap struct {
+	ImportID                    string                   `json:"import_id" format:"uuid"`
+	FinancialAccount            catalog.FinancialAccount `json:"financial_account"`
+	PeriodStart                 string                   `json:"period_start" format:"date"`
+	PeriodEnd                   string                   `json:"period_end" format:"date"`
+	PreviousHasSourceReferences bool                     `json:"previous_has_source_references"`
+	IncomingHasSourceReferences bool                     `json:"incoming_has_source_references"`
+}
+
+func checkCoverage(ctx context.Context, queries *ingestiondb.Queries, params ingestiondb.FindBlockedCoverageParams, account catalog.FinancialAccount) error {
+	prior, err := queries.FindBlockedCoverage(ctx, params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check import coverage: %w", err)
+	}
+	problem := httpapi.NewProblem(http.StatusConflict, "import_coverage_overlap",
+		"The coverage dates overlap an earlier import, and at least one file has rows without Source References.")
+	problem.Context = importProblemContext{Coverage: &coverageOverlap{
+		ImportID: prior.ImportID.String(), FinancialAccount: account,
+		PeriodStart: prior.PeriodStart.Time.Format(time.DateOnly), PeriodEnd: prior.PeriodEnd.Time.Format(time.DateOnly),
+		PreviousHasSourceReferences: prior.AllHaveSourceReferences,
+		IncomingHasSourceReferences: params.IncomingHasSourceReferences,
+	}}
+	return problem
+}

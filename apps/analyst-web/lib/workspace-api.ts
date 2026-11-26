@@ -28,15 +28,15 @@ export async function forwardWorkspaceRequest(
   if (!token) return problemResponse(401, "session_required", "Sign in to continue.");
 
   try {
-    const requestHeaders = new Headers({ Authorization: `Bearer ${token}` });
-    const options: RequestInit & { duplex?: "half" } = { method: request.method, headers: requestHeaders };
+    const headers = new Headers({ Authorization: `Bearer ${token}` });
+    const requestContentType = request.headers.get("content-type");
+    if (requestContentType) headers.set("Content-Type", requestContentType);
+    const upstream: RequestInit & { duplex?: "half" } = { method: request.method, headers };
     if (request.body) {
-      const contentType = request.headers.get("content-type");
-      if (contentType) requestHeaders.set("Content-Type", contentType);
-      options.body = request.body;
-      options.duplex = "half";
+      upstream.body = request.body;
+      upstream.duplex = "half";
     }
-    const response = await requestAPI(path, options);
+    const response = await requestAPI(path, upstream);
     const contentType = response.headers.get("content-type");
     if (response.ok || (response.status < 500 && contentType?.startsWith("application/problem+json"))) {
       const headers = new Headers({ "Cache-Control": "no-store" });

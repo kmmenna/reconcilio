@@ -6,7 +6,8 @@ const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
 test.use({ locale: "en-US" });
 
-test("reconciles demo imports and preserves competing proposal evidence in both languages", async ({ page, context }) => {
+test("reconciles demo imports, reviews reimport conflicts, and preserves proposal history in both languages", async ({ page, context }) => {
+  test.setTimeout(60_000);
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
   if (!password) throw new Error("Run the smoke task or set RECONCILIO_SMOKE_PASSWORD.");
 
@@ -87,6 +88,111 @@ test("reconciles demo imports and preserves competing proposal evidence in both 
   await expect(page.getByRole("heading", { name: "Evidências registradas" })).toBeVisible();
   await expect(page.getByText("CLOUDHOST* MONTHLY", { exact: true })).toBeVisible();
 
+  async function uploadReimport(fixture: string | { name: string; mimeType: string; buffer: Buffer }) {
+    await page.goto(`${origin}/workspace/imports`);
+    await page.getByLabel("Source", { exact: true }).selectOption({ label: "Demo ERP" });
+    await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
+    await page.getByLabel("Start date").fill("11/16/2026");
+    await page.getByLabel("End date").fill("11/22/2026");
+    await page.getByLabel("CSV file", { exact: true }).setInputFiles(fixture);
+    await page.getByRole("button", { name: "Preview CSV" }).click();
+  }
+
+  await page.getByLabel("Idioma").selectOption("en");
+  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  const conflictFixture = resolve(__dirname, "../../../examples/test-cases/reimport-amount-conflict.csv");
+  await uploadReimport(conflictFixture);
+  const amountComparison = page.getByRole("table", { name: /ERP-001/ });
+  await expect(amountComparison.getByRole("columnheader", { name: "Stored Transaction" })).toBeVisible();
+  await expect(amountComparison.getByRole("cell", { name: "-R$89.90", exact: true })).toBeVisible();
+  await expect(amountComparison.getByRole("cell", { name: "-R$94.90", exact: true })).toBeVisible();
+  const conflictURL = page.url();
+  const cancelPath = conflictURL.replace("/workspace/", "/api/") + "/cancel";
+  const crossOriginCancel = await page.request.post(cancelPath, { headers: { Origin: "https://example.invalid" } });
+  expect(crossOriginCancel.status()).toBe(403);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Language").selectOption("pt-BR");
+  await expect(page.getByRole("heading", { name: "Conflitos de referência da fonte" })).toBeVisible();
+  await expect(amountComparison.getByRole("columnheader", { name: "Transação registrada" })).toBeVisible();
+  await expect(amountComparison.getByRole("cell", { name: "-R$ 89,90", exact: true })).toBeVisible();
+  await expect(amountComparison.getByRole("cell", { name: "-R$ 94,90", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(conflictURL);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await page.getByRole("button", { name: "Cancelar importação" }).click();
+  await expect(page.getByRole("heading", { name: "Importação cancelada" })).toBeVisible();
+  await expect(page.getByText("Nenhuma transação foi importada.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Decisão registrada" })).toBeVisible();
+  await page.reload();
+  await expect(page).toHaveURL(conflictURL);
+  await expect(amountComparison.getByRole("cell", { name: "-R$ 89,90", exact: true })).toBeVisible();
+
+  await page.getByLabel("Idioma").selectOption("en");
+  await expect(page.getByRole("heading", { name: "Import canceled" })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await uploadReimport(conflictFixture);
+  await page.getByRole("button", { name: "Keep originals and import" }).click();
+  await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
+  await expect(page.getByText("1 transaction imported", { exact: true })).toBeVisible();
+  await expect(page.getByText("The original Transactions were kept.")).toBeVisible();
+  const receiptURL = page.url();
+  await uploadReimport(conflictFixture);
+  await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
+  await expect(page).toHaveURL(receiptURL);
+
+  await page.goto(detailURL);
+  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(page.getByText("-R$89.90", { exact: true }).first()).toBeVisible();
+
+  const header = "source_reference,payment_reference,transaction_date,amount,currency,description\n";
+  await uploadReimport({
+    name: "newer.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(header + "ERP-WEB-RACE,,2026-11-20,21.00,BRL,Incoming from browser\n"),
+  });
+  await expect(page.getByRole("heading", { name: "Import preview" })).toBeVisible();
+  const stagedURL = page.url();
+  await page.goto(`${origin}/workspace/imports`);
+  const sourceID = await page.getByLabel("Source", { exact: true }).locator("option").filter({ hasText: "Demo ERP" }).getAttribute("value");
+  const accountID = await page.getByLabel("Financial Account").locator("option").filter({ hasText: "Corporate Card" }).getAttribute("value");
+  expect(sourceID).toBeTruthy();
+  expect(accountID).toBeTruthy();
+  const competing = await page.request.post(`${origin}/api/imports`, {
+    headers: { Origin: origin },
+    multipart: {
+      source_id: sourceID!,
+      financial_account_id: accountID!,
+      period_start: "2026-11-16",
+      period_end: "2026-11-22",
+      file: { name: "earlier.csv", mimeType: "text/csv", buffer: Buffer.from(header + "ERP-WEB-RACE,,2026-11-20,20.00,BRL,Competing import\n") },
+    },
+  });
+  expect(competing.status()).toBe(201);
+  const { id: competingID } = await competing.json();
+  const concurrentConfirmation = await page.request.post(`${origin}/api/imports/${competingID}/confirm`, { headers: { Origin: origin } });
+  expect(concurrentConfirmation.status()).toBe(200);
+  // Open the original staged URL, then let the server find the conflict at confirmation.
+  await page.goto(stagedURL);
+  await page.getByRole("button", { name: "Confirm import" }).click();
+  const changed = page.getByRole("alert").filter({ hasText: "The conflicts changed since the preview." });
+  await expect(changed).toBeFocused();
+  await expect(page).toHaveURL(stagedURL);
+  await expect(page.getByRole("table", { name: /ERP-WEB-RACE/ }).getByRole("cell", { name: "R$20.00" })).toBeVisible();
+  await page.getByRole("button", { name: "Keep originals and import" }).click();
+  await expect(page.getByText("0 transactions imported", { exact: true })).toBeVisible();
+
+  await uploadReimport({
+    name: "reference-free.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(header + ",,2026-11-22,1.00,BRL,No Source Reference\n"),
+  });
+  const overlap = page.getByRole("alert").filter({ hasText: "The dates overlap an earlier import" });
+  await expect(overlap).toContainText("Corporate Card covers Nov 16, 2026 through Nov 22, 2026");
+  await page.getByLabel("Language").selectOption("pt-BR");
+  const localizedOverlap = page.getByRole("alert").filter({ hasText: "As datas se sobrepõem" });
+  await expect(localizedOverlap).toContainText("Corporate Card abrange o período de 16 de nov. de 2026 a 22 de nov. de 2026");
+
+  await page.goto(detailURL);
   await page.getByLabel("Idioma").selectOption("en");
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   await page.getByRole("link", { name: "Reconcilio" }).click();

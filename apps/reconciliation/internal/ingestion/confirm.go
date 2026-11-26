@@ -5,11 +5,14 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"net/http"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 )
 
@@ -27,8 +30,9 @@ type scheduledJob struct {
 	JobID            int64                    `json:"job_id"`
 }
 
-func (s *Service) confirm(ctx context.Context, id, analystID pgtype.UUID) (importView, error) {
+func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel bool, keepIDs []string) (importView, error) {
 	var receipt importView
+	var reviewProblem *httpapi.Problem
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := s.queries.WithTx(tx)
 		accountID, err := queries.GetImportAccountID(ctx, id)
@@ -42,29 +46,84 @@ func (s *Service) confirm(ctx context.Context, id, analystID pgtype.UUID) (impor
 		if err != nil {
 			return err
 		}
-		switch record.Status {
-		case "confirmed":
-			return json.Unmarshal(record.Receipt, &receipt)
-		case "pending":
-		default:
+		if record.Status != "pending" {
+			if (cancel && record.Status == "canceled") || (!cancel && record.Status == "confirmed") {
+				receipt, err = readReceipt(record.Receipt)
+				return err
+			}
 			return errImportResolved
 		}
-		if record.SourceSide != record.CurrentSourceSide {
-			return errSourceSideChanged
-		}
 
+		source := catalog.Source{ID: record.SourceID.String(), Name: record.SourceName, Side: record.SourceSide}
+		account := catalog.FinancialAccount{ID: accountID.String(), Code: record.FinancialAccountCode, Name: record.FinancialAccountName}
+		receipt = importView{
+			ID: id.String(), Source: source, FinancialAccount: account,
+			PeriodStart: record.PeriodStart.Time.Format(time.DateOnly), PeriodEnd: record.PeriodEnd.Time.Format(time.DateOnly),
+		}
 		var document previewDocument
 		if err := json.Unmarshal(record.Preview, &document); err != nil {
 			return fmt.Errorf("decode preview rows: %w", err)
 		}
-		allHaveReferences := true
-		transactions := make([]ingestiondb.InsertTransactionsParams, 0, len(document.Rows))
-		for _, row := range document.Rows {
+		if cancel {
+			receipt.Status = "canceled"
+			receipt.Decision = "cancel"
+			receipt.Conflicts = document.Conflicts
+			receipt.CanceledAt = new(time.Now().UTC().Truncate(time.Microsecond))
+			receipt.CanceledBy = analystID.String()
+			observation, err := json.Marshal(receipt)
+			if err != nil {
+				return fmt.Errorf("encode cancellation receipt: %w", err)
+			}
+			return queries.CancelImport(ctx, ingestiondb.CancelImportParams{ID: id, Receipt: observation})
+		}
+		if record.SourceSide != record.CurrentSourceSide {
+			return errSourceSideChanged
+		}
+		replay, err := findReplay(ctx, queries, record.SourceID, accountID, record.FileFingerprint)
+		if err != nil {
+			return err
+		}
+		if replay.ID.Valid {
+			receipt, err = readReceipt(replay.Receipt)
+			if err != nil {
+				return err
+			}
+			return queries.ResolveImportReplay(ctx, ingestiondb.ResolveImportReplayParams{ID: id, OriginalID: replay.ID})
+		}
+
+		assessment, err := assessAccount(ctx, queries, record.SourceID, accountID, document.Rows)
+		if err != nil {
+			return err
+		}
+		if err := checkCoverage(ctx, queries, ingestiondb.FindBlockedCoverageParams{
+			SourceID: record.SourceID, FinancialAccountID: accountID,
+			IncomingStart: record.PeriodStart, IncomingEnd: record.PeriodEnd,
+			IncomingHasSourceReferences: assessment.AllHaveSourceReferences,
+		}, account); err != nil {
+			return err
+		}
+		if !slices.EqualFunc(document.Conflicts, assessment.Conflicts, func(a, b importConflict) bool { return a.ID == b.ID }) {
+			document.Conflicts = assessment.Conflicts
+			preview := presentPreview(id, source, account, record.PeriodStart, record.PeriodEnd, document)
+			reviewProblem = conflictProblem("import_conflicts_changed", "The conflicts changed. Review the updated preview.", preview)
+			// Commit the updated preview before returning 409 so the same ID can be reviewed again.
+			data, err := json.Marshal(document)
+			if err != nil {
+				return fmt.Errorf("encode updated preview: %w", err)
+			}
+			return queries.UpdateImportPreview(ctx, ingestiondb.UpdateImportPreviewParams{ID: id, Preview: data})
+		}
+		if !acceptsConflicts(document.Conflicts, keepIDs) {
+			preview := presentPreview(id, source, account, record.PeriodStart, record.PeriodEnd, document)
+			return conflictProblem("import_conflicts_require_review", "Review the conflicts before confirming.", preview)
+		}
+
+		transactions := make([]ingestiondb.InsertTransactionsParams, 0, len(assessment.NewRows))
+		for _, row := range assessment.NewRows {
 			date, err := time.Parse(time.DateOnly, row.TransactionDate)
 			if err != nil {
 				return fmt.Errorf("decode staged transaction date: %w", err)
 			}
-			allHaveReferences = allHaveReferences && row.SourceReference != ""
 			transactions = append(transactions, ingestiondb.InsertTransactionsParams{
 				ImportID: id, FinancialAccountID: accountID, SourceID: record.SourceID, SourceSide: record.SourceSide,
 				SourceReference:  pgtype.Text{String: row.SourceReference, Valid: row.SourceReference != ""},
@@ -83,19 +142,19 @@ func (s *Service) confirm(ctx context.Context, id, analystID pgtype.UUID) (impor
 		}
 		if err := queries.InsertImportCoverage(ctx, ingestiondb.InsertImportCoverageParams{
 			ImportID: id, FinancialAccountID: accountID, SourceID: record.SourceID, PeriodStart: record.PeriodStart,
-			PeriodEnd: record.PeriodEnd, AllHaveSourceReferences: allHaveReferences, JobID: jobID,
+			PeriodEnd: record.PeriodEnd, AllHaveSourceReferences: assessment.AllHaveSourceReferences, JobID: jobID,
 		}); err != nil {
 			return fmt.Errorf("record import coverage: %w", err)
 		}
-		account := catalog.FinancialAccount{ID: accountID.String(), Code: record.FinancialAccountCode, Name: record.FinancialAccountName}
 		confirmedAt := time.Now().UTC().Truncate(time.Microsecond)
-		receipt = importView{
-			ID: id.String(), Status: "confirmed",
-			Source:           catalog.Source{ID: record.SourceID.String(), Name: record.SourceName, Side: record.SourceSide},
-			FinancialAccount: account,
-			PeriodStart:      record.PeriodStart.Time.Format(time.DateOnly), PeriodEnd: record.PeriodEnd.Time.Format(time.DateOnly),
-			ConfirmedAt: &confirmedAt, ConfirmedBy: analystID.String(), TransactionCount: new(count),
-			Jobs: []scheduledJob{{FinancialAccount: account, JobID: jobID}},
+		receipt.Status = "confirmed"
+		receipt.ConfirmedAt = &confirmedAt
+		receipt.ConfirmedBy = analystID.String()
+		receipt.TransactionCount = new(count)
+		receipt.Jobs = []scheduledJob{{FinancialAccount: account, JobID: jobID}}
+		if len(document.Conflicts) > 0 {
+			receipt.Decision = "keep_original"
+			receipt.Conflicts = document.Conflicts
 		}
 		observation, err := json.Marshal(receipt)
 		if err != nil {
@@ -105,5 +164,30 @@ func (s *Service) confirm(ctx context.Context, id, analystID pgtype.UUID) (impor
 			ID: id, ConfirmedAt: pgtype.Timestamptz{Time: confirmedAt, Valid: true}, ConfirmedBy: analystID, Receipt: observation,
 		})
 	})
+	if err == nil && reviewProblem != nil {
+		err = reviewProblem
+	}
 	return receipt, err
+}
+
+func acceptsConflicts(conflicts []importConflict, keepIDs []string) bool {
+	if len(conflicts) != len(keepIDs) {
+		return false
+	}
+	reviewed := make(map[string]bool, len(keepIDs))
+	for _, id := range keepIDs {
+		reviewed[id] = true
+	}
+	for _, conflict := range conflicts {
+		if !reviewed[conflict.ID] {
+			return false
+		}
+	}
+	return true
+}
+
+func conflictProblem(code, detail string, preview importView) *httpapi.Problem {
+	problem := httpapi.NewProblem(http.StatusConflict, code, detail)
+	problem.Context = importProblemContext{Preview: &preview}
+	return problem
 }
