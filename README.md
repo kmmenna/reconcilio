@@ -134,7 +134,7 @@ For live provider spend, select the OpenAI API project that owns the key. Open *
 
 ## Development
 
-Install the pinned tools with mise and install the web dependencies. The Go integration test requires a Docker-compatible container runtime for Testcontainers.
+Install the pinned tools with mise and install the web dependencies. `mise run test` runs the Go unit and PostgreSQL integration tests on the selected engine. Start Docker or the Podman API service or machine before running it.
 
 ```sh
 mise install
@@ -146,7 +146,7 @@ mise run test
 
 GitHub Actions runs the same build, lint, static analysis, PostgreSQL integration tests, and browser smoke tasks. Run `mise run db:generate` after changing module SQL or the schema. Install local Git hooks with `mise exec -- lefthook install`.
 
-For the browser smoke test, install Playwright Chromium and run the smoke task. It creates an isolated Compose project on port 3100 and removes its containers and test volume afterward. Set `RECONCILIO_SMOKE_PORT` if the port is occupied.
+For the browser smoke tests, install Playwright Chromium after the web dependencies. Both variants use the selected engine and its Docker Compose provider. Each run creates its own Compose project, database credentials, and PostgreSQL volume, then removes its containers, network, and volume when it exits. The smoke task chooses a free loopback frontend port by default. Set `RECONCILIO_SMOKE_PORT` to use a specific free port.
 
 ```sh
 mise run browser:install
@@ -154,6 +154,6 @@ mise run smoke
 RECONCILIO_SMOKE_RANKING=true mise run smoke
 ```
 
-The first smoke run checks the engine-only workflow, both conflict receipts, localized validation, and review history. The second uses a controlled local ranker without an OpenAI key. It verifies the recorded evaluation, order, and score across languages in review and decision history, and checks that language and direct-link changes cause no additional provider requests.
+The first smoke run checks the engine-only workflow, both conflict receipts, localized validation, and review history. The second uses a controlled local ranker without an OpenAI key. It verifies the recorded evaluation, order, and score across languages in review and decision history, and checks that language and direct-link changes cause no additional provider requests. [Test environment details](docs/environment.md#tests)
 
 Read the [submission write-up](docs/submission.md), [domain glossary](GLOSSARY.md), and [architecture decisions](docs/adr/) for the rationale behind the implementation.
