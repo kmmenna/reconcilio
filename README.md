@@ -44,20 +44,40 @@ Stop the Compose project when you are done. Compose retains the database volume 
 docker compose down
 ```
 
-With a rootless Podman socket, point Docker Compose at it and use its compatibility builder.
+### Rootless Podman
+
+To use Docker Compose with the default rootless Podman socket, point it at that socket and use the compatibility builder.
 
 ```sh
 export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 export DOCKER_BUILDKIT=0
 ```
 
-If the default OCI runtime denies container health checks or `exec`, start a separate Podman socket in another terminal.
+If Compose reports that PostgreSQL is unhealthy, check the database log and run the same readiness probe yourself. These commands use the default Compose project name.
+
+```sh
+podman logs --tail 25 reconcilio-postgres-1
+podman exec reconcilio-postgres-1 pg_isready -h 127.0.0.1 -U reconcilio -d reconcilio
+```
+
+If PostgreSQL logs that it is ready to accept connections and `podman exec` reports a `crun` permission error writing to `/proc/self/oom_score_adj`, use a dedicated Podman API socket with `runc`. With `runc` installed, start the socket in a separate terminal and leave it running while you use Compose.
 
 ```sh
 podman --runtime runc system service --time=0 "unix://$XDG_RUNTIME_DIR/reconcilio-podman.sock"
 ```
 
-Point `DOCKER_HOST` at `unix://$XDG_RUNTIME_DIR/reconcilio-podman.sock` in the terminal running Compose. Set `TESTCONTAINERS_RYUK_DISABLED=true` for the Go tests if rootless Podman prevents the Testcontainers cleanup service from starting. The test removes its PostgreSQL container on completion.
+From the project directory in another terminal, point Docker Compose at the dedicated socket. Force recreation on the first run after switching runtimes so the existing containers pick up `runc`. Reuse the original Compose project name so the same PostgreSQL volume is mounted.
+
+```sh
+export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/reconcilio-podman.sock"
+export DOCKER_BUILDKIT=0
+docker compose up --build -d --wait --force-recreate
+docker compose ps --all
+```
+
+The PostgreSQL, backend, and web containers should be healthy, and the migration container should exit with code 0. Continue with the normal sign-in instructions using this socket.
+
+Set `TESTCONTAINERS_RYUK_DISABLED=true` for the Go tests if rootless Podman prevents the Testcontainers cleanup service from starting. The test removes its PostgreSQL container on completion.
 
 ## Optional AI ranking
 
