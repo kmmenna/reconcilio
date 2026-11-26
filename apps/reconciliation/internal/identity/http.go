@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
@@ -79,22 +78,6 @@ func (s *Service) currentUser(ctx context.Context, in *profileInput) (*profileOu
 	}
 
 	return &profileOutput{CacheControl: "no-store", Body: user}, nil
-}
-
-func (s *Service) authorizedProfile(ctx context.Context, authorization string) (userProfile, error) {
-	scheme, raw, found := strings.Cut(authorization, " ")
-	if !found || !strings.EqualFold(scheme, "Bearer") {
-		return userProfile{}, sessionRequired()
-	}
-	user, err := s.profile(ctx, strings.TrimSpace(raw))
-	if errors.Is(err, errCredentials) {
-		return userProfile{}, sessionRequired()
-	}
-	if err != nil {
-		slog.ErrorContext(ctx, "Could not load current user", "error", err)
-		return userProfile{}, huma.Error500InternalServerError("The profile is temporarily unavailable.")
-	}
-	return user, nil
 }
 
 func sessionRequired() error {

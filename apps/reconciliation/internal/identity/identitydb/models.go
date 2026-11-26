@@ -3,15 +3,3 @@
 //   sqlc v1.31.1
 
 package identitydb
-
-import (
-	"github.com/jackc/pgx/v5/pgtype"
-)
-
-type User struct {
-	ID           pgtype.UUID
-	Username     string
-	DisplayName  string
-	PasswordHash string
-	IsAdmin      bool
-}

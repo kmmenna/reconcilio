@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/identity"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/migrations"
 )
 
@@ -87,15 +89,9 @@ func serve(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	identity.New(pool, key).RegisterHTTP(httpapi.New(mux))
-
 	server := &http.Server{
 		Addr:              cmp.Or(os.Getenv("HTTP_ADDR"), ":8080"),
-		Handler:           mux,
+		Handler:           newHandler(pool, key),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveResult := make(chan error, 1)
@@ -112,4 +108,19 @@ func serve(ctx context.Context, pool *pgxpool.Pool) error {
 		defer cancel()
 		return server.Shutdown(shutdown)
 	}
+}
+
+func newHandler(pool *pgxpool.Pool, key []byte) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	api := httpapi.New(mux)
+	accounts := identity.New(pool, key)
+	accounts.RegisterHTTP(api)
+	entries := catalog.New(pool)
+	entries.RegisterHTTP(api, accounts)
+	ingestion.New(pool, entries).RegisterHTTP(api, accounts)
+	return mux
 }

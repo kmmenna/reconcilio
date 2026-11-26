@@ -8,3 +8,22 @@ sql:
         package: identitydb
         out: internal/identity/identitydb
         sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations
+    queries: internal/catalog/queries.sql
+    gen:
+      go:
+        package: catalogdb
+        out: internal/catalog/catalogdb
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations
+    queries: internal/ingestion/queries.sql
+    gen:
+      go:
+        package: ingestiondb
+        out: internal/ingestion/ingestiondb
+        sql_package: pgx/v5
+        omit_unused_structs: true
