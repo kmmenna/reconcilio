@@ -2,7 +2,7 @@ import type { Locale } from "@/i18n/locales";
 
 const moneyFormats = new Map<string, Intl.NumberFormat>();
 const dateFormats = new Map<Locale, Intl.DateTimeFormat>();
-const timestampFormats = new Map<Locale, Intl.DateTimeFormat>();
+const timestampFormats = new Map<string, Intl.DateTimeFormat>();
 
 export function formatMoney(amount: string, currency: string, locale: Locale) {
   const decimalPoint = amount.indexOf(".");
@@ -28,12 +28,13 @@ export function formatTransactionDate(date: string, locale: Locale) {
     format = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" });
     dateFormats.set(locale, format);
   }
+  // A fixed anchor preserves the calendar day in every time zone.
   return format.format(new Date(`${date}T00:00:00Z`));
 }
 
-// UTC keeps recorded completion times consistent across browsers.
-export function formatTimestamp(timestamp: string, locale: Locale) {
-  let format = timestampFormats.get(locale);
+export function formatTimestamp(timestamp: string, locale: Locale, timeZone: string) {
+  const key = `${locale}:${timeZone}`;
+  let format = timestampFormats.get(key);
   if (!format) {
     format = new Intl.DateTimeFormat(locale, {
       year: "numeric",
@@ -41,10 +42,10 @@ export function formatTimestamp(timestamp: string, locale: Locale) {
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      timeZone: "UTC",
+      timeZone,
       timeZoneName: "short",
     });
-    timestampFormats.set(locale, format);
+    timestampFormats.set(key, format);
   }
   return format.format(new Date(timestamp));
 }

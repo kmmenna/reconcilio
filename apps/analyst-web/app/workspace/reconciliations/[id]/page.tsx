@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { LocalTimestamp } from "@/components/local-timestamp";
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { RankingAssessment } from "@/components/review/ranking-assessment";
 import type { ReconciliationDetail } from "@/lib/reconciliation";
-import { formatMoney, formatTimestamp, formatTransactionDate } from "@/lib/transaction-format";
+import { formatMoney, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
 
@@ -37,7 +38,7 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
             <div>
               <dt className="text-sm text-muted-foreground">{t("completedAt")}</dt>
               <dd className="mt-1 font-semibold tabular-nums">
-                <time dateTime={result.confirmed_at}>{formatTimestamp(result.confirmed_at, locale)}</time>
+                <LocalTimestamp value={result.confirmed_at} />
               </dd>
             </div>
           </dl>

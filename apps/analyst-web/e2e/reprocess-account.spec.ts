@@ -4,7 +4,7 @@ import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
-test.use({ locale: "en-US" });
+test.use({ locale: "en-US", timezoneId: "Asia/Tokyo" });
 
 test("reprocesses the selected Financial Account and keeps the summary link across languages", async ({ page }, testInfo) => {
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
@@ -49,6 +49,7 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await expect(page.getByText("No new Match Proposals", { exact: true })).toBeVisible();
   const completedAt = page.locator("time");
   const timestamp = await completedAt.getAttribute("datetime");
+  await expect(completedAt).toHaveText(/GMT\+9$/);
   const englishTime = await completedAt.textContent();
   if (!timestamp || !englishTime) throw new Error("The summary is missing its completion time.");
   await page.screenshot({ path: testInfo.outputPath("desktop-summary.png") });
@@ -58,10 +59,16 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await expect(page.getByRole("status")).toHaveText("Concluído");
   await expect(page).toHaveURL(jobURL);
   await expect(completedAt).toHaveAttribute("datetime", timestamp);
+  await expect(completedAt).toHaveText(/GMT\+9$/);
   await expect(completedAt).not.toHaveText(englishTime);
+  const tokyoClock = new Date(new Date(timestamp).getTime() + 9 * 60 * 60 * 1000);
+  const tokyoDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeZone: "UTC" }).format(tokyoClock);
+  await expect(completedAt).toContainText(tokyoDate);
+  await expect(completedAt).toContainText(tokyoClock.toISOString().slice(11, 16));
   await expect(page.getByText("Nenhuma conciliação automática", { exact: true })).toBeVisible();
   await expect(page.getByText("Nenhuma nova proposta de conciliação", { exact: true })).toBeVisible();
   await page.reload();
+  await expect(completedAt).toHaveText(/GMT\+9$/);
   await expect(page.getByRole("status")).toHaveText("Concluído");
   await expect(page).toHaveURL(jobURL);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);

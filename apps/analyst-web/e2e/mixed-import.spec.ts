@@ -40,8 +40,8 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await navigation.getByRole("link", { name: "Import CSV", exact: true }).click();
   await page.getByLabel("Source", { exact: true }).selectOption({ label: "Sistema da Matriz" });
   await page.getByLabel("Financial Account", { exact: true }).selectOption({ label: "Use account codes from CSV" });
-  await page.getByLabel("Start date").fill("11/1/2026");
-  await page.getByLabel("End date").fill("11/5/2026");
+  await page.getByLabel("Start date", { exact: true }).fill("11/1/2026");
+  await page.getByLabel("End date", { exact: true }).fill("11/5/2026");
   const file = (code: string) => ({
     name: "mixed.csv",
     mimeType: "text/csv",

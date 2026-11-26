@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@daypicker/react/style.css" layer(components);
 
 :root {
   color-scheme: light;
@@ -93,6 +94,34 @@
 
   .page-title {
     @apply text-[2rem] leading-[1.15] font-[650] tracking-[-0.035em];
+  }
+
+  .import-calendar.rdp-root {
+    --rdp-accent-color: var(--primary);
+    --rdp-accent-background-color: var(--accent);
+    --rdp-day-width: min(2.375rem, calc((100vw - 3rem) / 7));
+    --rdp-day-height: var(--rdp-day-width);
+    --rdp-day_button-width: var(--rdp-day-width);
+    --rdp-day_button-height: var(--rdp-day-height);
+    --rdp-day_button-border-radius: var(--radius-md);
+    --rdp-selected-border: 1px solid var(--primary);
+  }
+
+  .import-calendar .rdp-selected {
+    font-size: inherit;
+  }
+
+  .import-calendar .rdp-selected .rdp-day_button,
+  .import-calendar :is(.rdp-day_button, .rdp-button_previous, .rdp-button_next):hover {
+    background-color: var(--accent);
+  }
+
+  .import-calendar :is(.rdp-button_previous, .rdp-button_next) {
+    border-radius: var(--radius-md);
+  }
+
+  .import-calendar .rdp-day_button:focus-visible {
+    outline-offset: -2px;
   }
 
   .workspace {

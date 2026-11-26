@@ -2,6 +2,14 @@
   "title": "Importar CSV",
   "intro": "Selecione a fonte, a atribuição das contas e o período coberto pelo CSV.",
   "dateFormat": "DD/MM/AAAA",
+  "calendar": {
+    "open": "Abrir calendário — {field}",
+    "title": "Calendário — {field}",
+    "navigation": "Navegação do calendário",
+    "previous": "Mês anterior",
+    "next": "Próximo mês",
+    "today": "Hoje, {date}"
+  },
   "chooseSource": "Selecione uma fonte",
   "chooseAccount": "Selecione uma conta financeira",
   "chooseFile": "Escolher CSV",

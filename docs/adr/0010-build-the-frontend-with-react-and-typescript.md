@@ -12,7 +12,7 @@ Use next-intl with the App Router and the supported locales `pt-BR` and `en`. Re
 
 Show a native language selector on the sign-in page and a link-styled language menu in the authenticated workspace footer. Share preference handling for Automatic, Brazilian Portuguese, and English, and mark the selected preference inside the menu. Automatic clears the explicit preference so the browser language is used again. Keep the current page when the selection changes.
 
-Localize interface text in Next.js and map stable API error codes to localized messages. Format dates and monetary values for the selected locale using the Transaction's currency. Display imported descriptions as supplied by the Source.
+Localize interface text in Next.js and map stable API error codes to localized messages. Format dates and monetary values for the selected locale using the Transaction's currency. Show recorded timestamps in the browser's local time zone. Preserve the calendar day for Transaction dates and import coverage. Display imported descriptions as supplied by the Source.
 
 Adopt shadcn/ui components as needed, starting with Button, Input, Label, and Native Select for sign-in and language selection. Style them with Reconcilio's shared tokens and use Impeccable to review the interface and interaction states.
 

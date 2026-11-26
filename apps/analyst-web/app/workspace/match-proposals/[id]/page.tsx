@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { getLocale, getTranslations } from "next-intl/server";
+import { getTranslations } from "next-intl/server";
 
+import { LocalTimestamp } from "@/components/local-timestamp";
 import { ProposalActions, ReviewDecisions } from "@/components/review/proposal-actions";
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { TransactionRecord } from "@/components/review/transaction-record";
 import { Button } from "@/components/ui/button";
 import type { MatchProposalDetail } from "@/lib/reconciliation";
-import { formatTimestamp } from "@/lib/transaction-format";
 import { readWorkflowID } from "@/lib/auth";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
@@ -15,10 +15,9 @@ import { readWorkspaceResource } from "@/lib/workspace-api";
 export default async function MatchProposalPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const token = await getWorkspaceToken();
-  const [proposal, t, locale, workflow] = await Promise.all([
+  const [proposal, t, workflow] = await Promise.all([
     readWorkspaceResource<MatchProposalDetail>(`/api/match-proposals/${encodeURIComponent(id)}`, token),
     getTranslations("Review"),
-    getLocale(),
     readWorkflowID(),
   ]);
 
@@ -54,14 +53,14 @@ export default async function MatchProposalPage({ params }: { params: Promise<{ 
               <div>
                 <dt className="text-muted-foreground">{t("recorded")}</dt>
                 <dd className="mt-0.5 tabular-nums">
-                  <time dateTime={proposal.created_at}>{formatTimestamp(proposal.created_at, locale)}</time>
+                  <LocalTimestamp value={proposal.created_at} />
                 </dd>
               </div>
               {proposal.resolved_at && (
                 <div>
                   <dt className="text-muted-foreground">{t("resolved")}</dt>
                   <dd className="mt-0.5 tabular-nums">
-                    <time dateTime={proposal.resolved_at}>{formatTimestamp(proposal.resolved_at, locale)}</time>
+                    <LocalTimestamp value={proposal.resolved_at} />
                   </dd>
                 </div>
               )}

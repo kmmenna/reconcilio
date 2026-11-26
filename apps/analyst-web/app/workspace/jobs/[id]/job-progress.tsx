@@ -1,14 +1,14 @@
 "use client";
 
+import { LocalTimestamp } from "@/components/local-timestamp";
 import { correlatedFetch } from "@/lib/correlation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { ReconciliationJob } from "@/lib/reconciliation";
-import { formatTimestamp } from "@/lib/transaction-format";
 
 function isFinal(status: ReconciliationJob["status"]) {
   return status === "completed" || status === "failed" || status === "cancelled";
@@ -16,7 +16,6 @@ function isFinal(status: ReconciliationJob["status"]) {
 
 export function JobProgress({ initialJob, workflow }: { initialJob: ReconciliationJob; workflow: string }) {
   const t = useTranslations("Reconciliation");
-  const locale = useLocale();
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
   const [problem, setProblem] = useState<"pollUnavailable" | "notFound" | null>(null);
@@ -72,7 +71,7 @@ export function JobProgress({ initialJob, workflow }: { initialJob: Reconciliati
           <dl className="mt-4 border-t border-border pt-4">
             <dt className="text-sm text-muted-foreground">{t("jobs.completedAt")}</dt>
             <dd className="mt-1 font-medium tabular-nums">
-              <time dateTime={job.completed_at}>{formatTimestamp(job.completed_at, locale)}</time>
+              <LocalTimestamp value={job.completed_at} />
             </dd>
           </dl>
         )}

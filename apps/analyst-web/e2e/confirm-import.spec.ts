@@ -27,8 +27,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   ] as const) {
     await page.getByLabel("Source", { exact: true }).selectOption({ label: source });
     await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-    await page.getByLabel("Start date").fill("11/16/2026");
-    await page.getByLabel("End date").fill("11/22/2026");
+    await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
+    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(resolve(__dirname, "../../../examples/demo", fixture));
     const previewRequest = page.waitForResponse(response => response.url() === `${origin}/api/imports` && response.request().method() === "POST");
     await page.getByRole("button", { name: "Preview CSV" }).click();
@@ -120,8 +120,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await page.goto(`${origin}/workspace/imports`);
     await page.getByLabel("Source", { exact: true }).selectOption({ label: "Demo ERP" });
     await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-    await page.getByLabel("Start date").fill("11/16/2026");
-    await page.getByLabel("End date").fill("11/22/2026");
+    await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
+    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(fixture);
     await page.getByRole("button", { name: "Preview CSV" }).click();
   }
