@@ -20,8 +20,6 @@
     "title": "Reconciliation workspace",
     "unavailable": "Workspace unavailable",
     "sessionUnavailable": "Your session could not be verified. Reload the page to try again.",
-    "signedInAs": "Signed in as",
-    "username": "Username",
     "signOut": "Sign out",
     "signingOut": "Signing out…"
   },
