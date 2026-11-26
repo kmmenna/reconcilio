@@ -8,3 +8,10 @@ select_container_engine() {
       ;;
   esac
 }
+
+podman_compose_endpoint() (
+  unset DOCKER_CONTEXT
+  # Use the socket Podman passes to Compose, including on macOS.
+  PODMAN_COMPOSE_PROVIDER=/bin/sh PODMAN_COMPOSE_WARNING_LOGS=false \
+    podman compose -c 'printf "%s\n" "$DOCKER_HOST"'
+)

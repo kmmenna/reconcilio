@@ -22,14 +22,46 @@ compose() {
   sh scripts/compose.sh --env-file /dev/null -p "$project" -f compose.yaml "$@"
 }
 
+remove_image() {
+  if [ "$CONTAINER_ENGINE" = podman ]; then
+    podman --url "$endpoint" image rm --ignore --no-prune "$1"
+    return
+  fi
+  image_id=$(docker image ls --filter "reference=$1" --quiet) || return 1
+  if [ -n "$image_id" ]; then
+    docker image rm --no-prune "$1"
+  fi
+}
+
 cleanup() {
   status=$?
   trap - EXIT INT HUP TERM
   if ! compose down --volumes && [ "$status" -eq 0 ]; then
     status=1
   fi
+  while IFS= read -r image; do
+    case "$image" in
+      "$project"-*|"$project"_*)
+        # Remove the project tag by name, even when it shares an image ID.
+        case "$image" in
+          *:*) ;;
+          *) image="$image:latest" ;;
+        esac
+        if ! remove_image "$image" && [ "$status" -eq 0 ]; then
+          status=1
+        fi
+        ;;
+    esac
+  done <<EOF
+$images
+EOF
   exit "$status"
 }
+
+images=$(compose config --images)
+if [ "$CONTAINER_ENGINE" = podman ]; then
+  endpoint=$(podman_compose_endpoint)
+fi
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 129' HUP
