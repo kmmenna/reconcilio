@@ -1,0 +1,53 @@
+[tools]
+go = "1.27.1"
+node = "22.20.0"
+lefthook = "2.2.2"
+sqlc = "1.31.1"
+
+[tasks."web:install"]
+dir = "apps/analyst-web"
+run = "npm ci"
+
+[tasks."db:generate"]
+dir = "apps/reconciliation"
+run = "sqlc generate"
+
+[tasks."check:go"]
+dir = "apps/reconciliation"
+run = '''
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+  printf 'Run gofmt on:\n%s\n' "$unformatted" >&2
+  exit 1
+fi
+go vet ./...
+'''
+
+[tasks."check:web"]
+dir = "apps/analyst-web"
+run = "npm run check"
+
+[tasks.check]
+depends = ["check:go", "check:web"]
+
+[tasks."build:go"]
+dir = "apps/reconciliation"
+run = "go build ./..."
+
+[tasks."build:web"]
+dir = "apps/analyst-web"
+run = "npm run build"
+
+[tasks.build]
+depends = ["build:go", "build:web"]
+
+[tasks.test]
+dir = "apps/reconciliation"
+run = "go test ./..."
+
+[tasks."browser:install"]
+dir = "apps/analyst-web"
+run = "npm exec -- playwright install --with-deps chromium"
+
+[tasks.smoke]
+run = "sh scripts/smoke.sh"

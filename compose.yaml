@@ -1,0 +1,60 @@
+x-go: &go
+  build: ./apps/reconciliation
+  image: ${COMPOSE_PROJECT_NAME:-reconcilio}-go:local
+  environment: &go-env
+    DATABASE_URL: postgres://reconcilio:reconcilio@postgres:5432/reconcilio?sslmode=disable
+
+services:
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: reconcilio
+      POSTGRES_USER: reconcilio
+      POSTGRES_PASSWORD: reconcilio
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "reconcilio", "-d", "reconcilio"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    <<: *go
+    command: ["migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    <<: *go
+    environment:
+      <<: *go-env
+      JWT_SECRET: ${JWT_SECRET:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  analyst-web:
+    build: ./apps/analyst-web
+    environment:
+      GO_API_ORIGIN: http://backend:8080
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:${ANALYST_WEB_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 4s
+      retries: 15
+
+volumes:
+  postgres-data:
