@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
-import { CreateUserLink } from "@/components/accounts/create-user-link";
 import { Button } from "@/components/ui/button";
 import { getWorkspaceProfile } from "@/lib/workspace";
 
@@ -36,7 +35,6 @@ export default async function WorkspacePage() {
           <Button asChild variant="outline" className="h-11 text-base">
             <Link href="/workspace/catalog">{catalog("title")}</Link>
           </Button>
-          {profile.is_admin && <CreateUserLink />}
         </div>
       ) : (
         <p className="mt-6 text-destructive" role="alert">{t("sessionUnavailable")}</p>

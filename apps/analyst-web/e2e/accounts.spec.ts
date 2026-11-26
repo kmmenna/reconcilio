@@ -17,12 +17,26 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   const initialPassword = "initial-password";
   const newPassword = "changed-password";
   const header = page.getByRole("banner");
+  const createUser = header.getByRole("link", { name: "Create user", exact: true });
+  const adminMenu = header.getByRole("button", { name: "Administrator admin", exact: true });
   const accountMenu = header.getByRole("button", { name: `${displayName} ${username}`, exact: true });
   const signOut = page.getByRole("menuitem", { name: "Sign out", exact: true });
 
   await page.goto(`${origin}/login`);
   await signIn(page, "admin", adminPassword);
-  await page.getByRole("link", { name: "Create user" }).click();
+  await expect(createUser).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "Create user", exact: true })).toHaveCount(0);
+  await adminMenu.click();
+  await page.getByRole("menuitem", { name: "My profile" }).click();
+  await expect(page).toHaveURL(`${origin}/workspace/profile`);
+
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(createUser).toBeInViewport({ ratio: 1 });
+  await expect(adminMenu).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await createUser.click();
+  await expect(page).toHaveURL(`${origin}/workspace/users/new`);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   const account = { username, display_name: displayName, password: initialPassword };
   const missingOrigin = await context.request.post(`${origin}/api/users`, { data: account });
@@ -41,13 +55,14 @@ test("creates an analyst and lets them update their own profile and sign-in cred
 
   await page.getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
   await expect(page.getByRole("heading", { name: "Criar usuário" })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Criar usuário", exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Este nome de usuário já está em uso. Escolha outro.");
   await expect(page.getByLabel("Nome de usuário")).toHaveValue(username);
   await expect(page).toHaveURL(`${origin}/workspace/users/new`);
   await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
 
   await expect(page.getByRole("heading", { name: "Create user" })).toBeVisible();
-  await header.getByRole("button", { name: "Administrator admin", exact: true }).click();
+  await adminMenu.click();
   await signOut.click();
   await expect(page).toHaveURL(`${origin}/login`);
   await page.reload();
@@ -55,6 +70,7 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Create user" })).toHaveCount(0);
   await page.goto(`${origin}/workspace/users/new`);
+  await expect(createUser).toHaveCount(0);
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Ask an administrator to create the account.");
   await page.getByRole("link", { name: "Back to workspace" }).click();
 
