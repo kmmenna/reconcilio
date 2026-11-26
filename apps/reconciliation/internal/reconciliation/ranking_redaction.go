@@ -9,14 +9,18 @@ import (
 
 const sensitiveIdentifiers = `(?i:https?://[^\s,;]+|[\p{L}\p{N}._%+\-]+@[\p{L}\p{N}.\-]+\.[\p{L}]{2,})` +
 	`|(?i:\b(?:cpf|cnpj|ssn|iban|account|acct|routing|conta|ag[eê]ncia|card|cart[aã]o|chave pix)\s*[:#=-]?\s*(?:ending in\s+|final\s+)?(?:[X*•]+\s*)?[\p{L}\p{N}*•._/\-]*[0-9][\p{L}\p{N}*•._/\-]*)` +
+	`|(?i:\b(?:visa|master[ \t]?card|amex|american express|elo|hipercard|discover|diners(?: club)?|jcb)\b[ \t]*[:#=-]?[ \t]*(?:[X*•][ \t-]*){2,}[0-9]{4}\b)` +
 	`|(?:\+?[0-9][0-9(). \-]{5,}[0-9])`
+
+const standaloneUppercaseName = `(?m:^[ \t]*\p{Lu}{2,}(?:[ \t]+\p{Lu}{2,})?[ \t]+(?:DA|DAS|DE|DO|DOS)[ \t]+\p{Lu}{2,}(?:[ \t]+\p{Lu}{2,})?[ \t]*$)`
 
 var sensitiveDescription = regexp.MustCompile(sensitiveIdentifiers +
 	`|(?i:\b(?:titular|nome|name|customer|recipient|benefici[aá]ri[oa]|pagamento para|payment to)\s*[:=-]?\s+\p{L}+(?:[ \t]+\p{L}+){0,5})` +
-	`|\p{Lu}\p{Ll}{1,}(?:(?:[ \t]+(?:d[aeo]s?|e|and))?[ \t]+\p{Lu}\p{Ll}{1,}){1,4}`,
+	`|\p{Lu}\p{Ll}{1,}(?:(?:[ \t]+(?:d[aeo]s?|e|and))?[ \t]+\p{Lu}\p{Ll}{1,}){1,4}` +
+	`|` + standaloneUppercaseName,
 )
 
-var sensitiveExplanation = regexp.MustCompile(sensitiveIdentifiers + `|\[redacted_[A-Z2-7]+_[0-9]+\]`)
+var sensitiveExplanation = regexp.MustCompile(sensitiveIdentifiers + `|` + standaloneUppercaseName + `|\[redacted_[A-Z2-7]+_[0-9]+\]`)
 
 type descriptionRedactor struct {
 	nonce        string

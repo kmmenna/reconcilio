@@ -57,7 +57,6 @@
     "invalid_ranking_evaluation": "Esta avaliação da IA não está disponível para a proposta. Atualize a página e tente novamente.",
     "match_proposal_conflict": "Esta proposta mudou. As alternativas restantes foram atualizadas.",
     "match_proposal_not_found": "A proposta de conciliação não foi encontrada.",
-    "invalid_ranking_evaluation": "A avaliação de classificação não abrange esta proposta.",
     "review_unavailable": "Não foi possível salvar a decisão. Tente novamente.",
     "invalid_origin": "Faça esta solicitação na área de trabalho do Reconcilio.",
     "invalid_content_type": "Recarregue a página e tente novamente.",

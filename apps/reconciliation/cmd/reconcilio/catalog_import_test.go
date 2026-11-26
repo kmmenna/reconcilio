@@ -268,12 +268,21 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		}
 		for _, replay := range []*httptest.ResponseRecorder{
 			action(duplicateRefreshed.ID, "confirm"),
-			upload("", "2026-11-10", "2026-11-11", data),
+			upload("", "2026-11-02", "2026-11-03", data),
 			request(http.MethodGet, importsURL+refreshed.ID, "", nil),
 		} {
 			if replay.Code != http.StatusOK || replay.Body.String() != confirmed.Body.String() {
 				t.Fatalf("mixed replay changed the receipt: %d %s", replay.Code, replay.Body)
 			}
+		}
+
+		var invalid httpapi.Problem
+		readResponse(t, upload("", "2026-11-02", "2026-11-02", data), http.StatusUnprocessableEntity, &invalid)
+		if invalid.Code != "invalid_csv" || !slices.Equal(invalid.Issues, []httpapi.Issue{
+			{Line: 3, Field: "transaction_date", Reason: "outside_period"},
+			{Line: 4, Field: "transaction_date", Reason: "outside_period"},
+		}) {
+			t.Fatalf("mixed replay must validate the submitted period: %+v", invalid)
 		}
 
 		// A reference-free row in the other account does not block this referenced overlap.

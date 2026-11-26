@@ -11,6 +11,12 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
   if (!password) throw new Error("Run the smoke task or set RECONCILIO_SMOKE_PASSWORD.");
 
+  const unauthenticated = await page.request.post(`${origin}/api/imports`, {
+    headers: { Origin: origin },
+  });
+  expect(unauthenticated.status()).toBe(401);
+  expect(await unauthenticated.json()).toMatchObject({ code: "session_required" });
+
   await page.goto(`${origin}/workspace/imports`);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.getByLabel("Username").fill("admin");
@@ -18,6 +24,12 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByRole("link", { name: "Import CSV" }).click();
   await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
+  const unsupportedMedia = await page.request.post(`${origin}/api/imports`, {
+    headers: { Origin: origin },
+    data: { file: "invalid" },
+  });
+  expect(unsupportedMedia.status()).toBe(422);
+  expect(await unsupportedMedia.json()).toMatchObject({ code: "validation_failed" });
   const crossOrigin = await page.request.post(`${origin}/api/imports`, {
     headers: { Origin: "https://example.invalid" },
   });

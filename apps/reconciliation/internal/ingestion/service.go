@@ -4,6 +4,7 @@ package ingestion
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -72,6 +73,108 @@ func New(pool *pgxpool.Pool, entries *catalog.Service, jobs jobEnqueuer) *Servic
 	return &Service{pool: pool, queries: ingestiondb.New(pool), catalog: entries, jobs: jobs}
 }
 
+type previewRequest struct {
+	sourceID           string
+	financialAccountID string
+	periodStart        string
+	periodEnd          string
+	file               *decodedUpload
+}
+
+type decodedUpload struct {
+	fingerprint [sha256.Size]byte
+	rows        []decodedRow
+	issues      []httpapi.Issue
+}
+
+func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, input previewRequest) (importView, error) {
+	params, accountID, issues := importSelections(input)
+	if len(issues) > 0 {
+		return importView{}, importProblem("invalid_import_selection", "Check the import selections.", issues...)
+	}
+	if _, err := s.catalog.GetSource(ctx, params.SourceID); err != nil {
+		if errors.Is(err, catalog.ErrSourceNotFound) {
+			return importView{}, importProblem("invalid_import_selection", "Check the import selections.",
+				httpapi.Issue{Field: "source_id", Reason: "unknown_source"})
+		}
+		return importView{}, err
+	}
+	var accounts []importAccount
+	var registered []catalog.FinancialAccount
+	var accountsByCode map[string]string
+	if accountID.Valid {
+		account, err := s.catalog.GetFinancialAccount(ctx, accountID)
+		if errors.Is(err, catalog.ErrFinancialAccountNotFound) {
+			return importView{}, importProblem("invalid_import_selection", "Check the import selections.",
+				httpapi.Issue{Field: "financial_account_id", Reason: "unknown_financial_account"})
+		}
+		if err != nil {
+			return importView{}, err
+		}
+		accounts = []importAccount{{id: accountID, entry: account}}
+	} else {
+		var err error
+		registered, err = s.catalog.ListFinancialAccounts(ctx)
+		if err != nil {
+			return importView{}, err
+		}
+		accountsByCode = make(map[string]string, len(registered))
+		for _, account := range registered {
+			accountsByCode[account.Code] = account.ID
+		}
+	}
+
+	rows, issues := validatePreviewRows(input.file, params.PeriodStart.Time, params.PeriodEnd.Time, accountsByCode)
+	if len(issues) > 0 {
+		return importView{}, importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
+	}
+	if !accountID.Valid {
+		var err error
+		accounts, err = resolveImportAccounts(rows, registered)
+		if err != nil {
+			return importView{}, err
+		}
+	}
+	params.FileFingerprint = input.file.fingerprint[:]
+	params.CreatedBy = userID
+	return s.savePreview(ctx, params, accounts, rows)
+}
+
+func importSelections(input previewRequest) (ingestiondb.CreatePendingImportParams, pgtype.UUID, []httpapi.Issue) {
+	var issues []httpapi.Issue
+	add := func(field, reason string) {
+		issues = append(issues, httpapi.Issue{Field: field, Reason: reason})
+	}
+
+	source, sourceErr := uuid.Parse(input.sourceID)
+	if sourceErr != nil {
+		add("source_id", "invalid_source")
+	}
+	account, accountErr := uuid.Parse(input.financialAccountID)
+	if input.financialAccountID != "" && accountErr != nil {
+		add("financial_account_id", "invalid_financial_account")
+	}
+	start, validStart := parseDate(input.periodStart)
+	if !validStart {
+		add("period_start", "invalid_date")
+	}
+	end, validEnd := parseDate(input.periodEnd)
+	if !validEnd {
+		add("period_end", "invalid_date")
+	}
+	if validStart && validEnd && end.Before(start) {
+		add("period_end", "invalid_period")
+	}
+	if input.file == nil {
+		add("file", "missing_file")
+	}
+	return ingestiondb.CreatePendingImportParams{
+		SourceID:    pgtype.UUID{Bytes: source, Valid: sourceErr == nil},
+		PeriodStart: pgtype.Date{Time: start, Valid: validStart},
+		PeriodEnd:   pgtype.Date{Time: end, Valid: validEnd},
+	}, pgtype.UUID{Bytes: account, Valid: accountErr == nil}, issues
+}
+
 func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePendingImportParams, accounts []importAccount, rows []stagedRow) (importView, error) {
 	var view importView
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -118,6 +221,9 @@ func (s *Service) refreshPreview(ctx context.Context, id, analystID pgtype.UUID)
 		if err != nil {
 			return err
 		}
+		if issues := coverageDateIssues(document.Rows, record.PeriodStart.Time, record.PeriodEnd.Time); len(issues) > 0 {
+			return importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
+		}
 		replay, err := findReplay(ctx, queries, record.SourceID, accountIDs(accounts), record.FileFingerprint)
 		if err != nil {
 			return err
@@ -132,9 +238,6 @@ func (s *Service) refreshPreview(ctx context.Context, id, analystID pgtype.UUID)
 }
 
 func stagePreview(ctx context.Context, queries *ingestiondb.Queries, params ingestiondb.CreatePendingImportParams, source catalog.Source, accounts []importAccount, rows []stagedRow, exactReplay bool) (importView, error) {
-	if issues := coverageDateIssues(rows, params.PeriodStart.Time, params.PeriodEnd.Time); len(issues) > 0 {
-		return importView{}, importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
-	}
 	document := previewDocument{Rows: rows}
 	if !exactReplay {
 		_, conflicts, err := assessImport(ctx, queries, params.SourceID, params.PeriodStart, params.PeriodEnd, accounts, rows)

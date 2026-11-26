@@ -20,12 +20,15 @@ export async function forwardWorkspaceRequest(
   request: Request,
   path: string,
   unavailable: { code: string; detail: string },
+  validate?: (request: Request) => Response | undefined,
 ) {
   if (request.method !== "GET" && !hasTrustedOrigin(request)) {
     return problemResponse(403, "invalid_origin", "Reload the page and try again.");
   }
   const token = (await cookies()).get(sessionCookie)?.value;
   if (!token) return problemResponse(401, "session_required", "Sign in to continue.");
+  const invalid = validate?.(request);
+  if (invalid) return invalid;
 
   try {
     const headers = new Headers({ Authorization: `Bearer ${token}` });
