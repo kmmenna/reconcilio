@@ -373,6 +373,12 @@ func TestCSVImportPreview(t *testing.T) {
 		}
 		waitForJob(confirmImport(externalPath), 2)
 
+		t.Run("lists open transactions with their independent proposal and discrepancy states", func(t *testing.T) {
+			verifyDemoOpenTransactions(t, func(path string) *httptest.ResponseRecorder {
+				return request(http.MethodGet, path, session.Token, "", nil)
+			})
+		})
+
 		type summary struct {
 			ID          string    `json:"id"`
 			Amount      string    `json:"amount"`
@@ -532,14 +538,22 @@ func TestCSVImportPreview(t *testing.T) {
 			t.Fatalf("filter returned results from another Financial Account: %+v", results)
 		}
 
-		verifyProposalReview(t, accountID, func(method, path string) *httptest.ResponseRecorder {
+		requestReview := func(method, path string) *httptest.ResponseRecorder {
 			return request(method, path, session.Token, "", nil)
-		}, func(sourceSide, csv string) {
+		}
+		confirmSide := func(sourceSide, csv string) {
 			source := sourceID
 			if sourceSide == "external" {
 				source = externalID
 			}
 			waitForJob(confirmImport(stageCSV(source, csv)), 0)
+		}
+		verifyProposalReview(t, accountID, requestReview, confirmSide)
+
+		t.Run("keeps exact discrepancies and accounts for reconciled references and independent proposals", func(t *testing.T) {
+			verifyOpenTransactionEdges(t, func(path string) *httptest.ResponseRecorder {
+				return requestReview(http.MethodGet, path)
+			}, confirmSide)
 		})
 	})
 
