@@ -9,9 +9,10 @@ The local workflow supports Linux, macOS, and WSL2. Install mise and run `mise i
 - **Docker** is the default. Run Docker Engine or Docker Desktop with the Docker Compose plugin available as `docker compose`.
 - **Podman** uses Docker Compose through `podman compose`. Run the Podman API service on Linux or WSL2, or a Podman machine on macOS. Install the Docker Compose CLI plugin or put the `docker-compose` executable on `PATH`. Set `PODMAN_COMPOSE_PROVIDER` to use a Docker Compose executable from another location.
 
-Run the following from the worktree root. Compose starts PostgreSQL and runs the application and River queue migrations before starting the API and browser app.
+Run the following from the worktree root. The optional `env:init` task copies the three environment examples to their matching `.env` files and preserves existing files. Compose starts PostgreSQL and runs the application and River queue migrations before starting the API and browser app.
 
 ```sh
+mise run env:init
 mise run compose:up
 mise exec -- node scripts/orchestration-env.mjs sh scripts/compose.sh exec backend reconcilio bootstrap-admin
 ```
@@ -27,7 +28,7 @@ Stopping removes this project's containers and network. Its PostgreSQL volume is
 
 ### Worktree settings
 
-Mise tasks read these settings from an optional `.env` in the worktree root. A local value takes precedence over an inherited shell value. Compose's automatic loading of the root file is disabled.
+Mise tasks read these settings from an optional `.env` in the worktree root. A local value takes precedence over an inherited shell value. Compose's automatic loading of the root file is disabled. See [Environment configuration](docs/environment.md) for settings owned by the backend and frontend, including database initialization and origin overrides.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -79,7 +80,7 @@ Set `DOCKER_HOST` to `unix://$XDG_RUNTIME_DIR/reconcilio-podman.sock` in the ter
 
 ## Optional AI ranking
 
-The Matching Engine runs the full walkthrough with the OpenAI variables unset. To enable bilingual proposal ranking, export `OPENAI_API_KEY` and `OPENAI_MODEL` in the shell that runs `mise run compose:up`. Use a model available to your OpenAI project that supports the Responses API and Structured Outputs.
+The Matching Engine runs the full walkthrough with the OpenAI variables unset. To enable bilingual proposal ranking, set `OPENAI_API_KEY` and `OPENAI_MODEL` in `apps/reconciliation/.env` or export them in the shell that runs `mise run compose:up`. Use a model available to your OpenAI project that supports the Responses API and Structured Outputs.
 
 On a fresh Compose project, bootstrap and sign in, import both Corporate Card files, and wait for processing. For existing imports with pending alternatives, open **Reconciliations**, select **Corporate Card**, and use **Reprocess account**. The worker reuses any assessment that already covers the current group. If you have already confirmed Canva, start a fresh worktree project with its own PostgreSQL volume and bootstrap it. Assign different host ports if the original stack remains up.
 

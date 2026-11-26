@@ -52,9 +52,13 @@ run = "npm exec -- playwright install --with-deps chromium"
 [tasks.smoke]
 run = "sh scripts/smoke.sh"
 
+[tasks."env:init"]
+description = "Create missing environment files from their examples"
+run = "node scripts/env-init.mjs"
+
 [tasks."compose:up"]
 description = "Build and start the worktree's Compose stack"
-run = "node scripts/orchestration-env.mjs sh scripts/compose.sh up --build -d --wait"
+run = "node scripts/orchestration-env.mjs node scripts/compose-env.mjs sh scripts/compose.sh up --build -d --wait"
 
 [tasks."compose:logs"]
 description = "Show logs from the worktree's Compose stack"
