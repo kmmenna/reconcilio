@@ -17,7 +17,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByRole("link", { name: "Import CSV" }).click();
+  const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
+  const currentSection = navigation.locator('[aria-current="location"]');
 
   for (const [source, fixture, count] of [
     ["Demo ERP", "internal.csv", 3],
@@ -57,6 +58,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await expect(page).toHaveURL(previewURL);
     await page.reload();
     await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
+    await expect(currentSection).toHaveText("Import CSV");
 
     await page.getByLabel("Language").selectOption("pt-BR");
     await expect(page.getByRole("heading", { name: "Importação confirmada" })).toBeVisible();
@@ -72,7 +74,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     if (fixture === "internal.csv") {
       await expect(page.getByText("No automatic Reconciliations", { exact: true })).toBeVisible();
       await expect(page.getByText("No new Match Proposals", { exact: true })).toBeVisible();
-      await page.goto(`${origin}/workspace/imports`);
+      await navigation.getByRole("link", { name: "Import CSV", exact: true }).click();
     } else {
       await expect(page.getByText("1 automatic Reconciliation", { exact: true })).toBeVisible();
       await expect(page.getByText("2 new Match Proposals", { exact: true })).toBeVisible();
@@ -101,6 +103,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
 
   await verifyOpenTransactions(page);
   await page.goto(detailURL);
+  await expect(page).toHaveURL(detailURL);
+  await expect(currentSection).toHaveText("Reconciliations");
 
   await page.getByLabel("Language").selectOption("pt-BR");
   await expect(page.getByRole("heading", { name: "Detalhes da conciliação" })).toBeVisible();
@@ -233,14 +237,14 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await page.goto(detailURL);
   await page.getByLabel("Idioma").selectOption("en");
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
-  await page.getByRole("link", { name: "Reconcilio" }).click();
-  await page.getByRole("link", { name: "Review queue" }).click();
+  await navigation.getByRole("link", { name: "Review queue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
   await expect(page.getByText("ERP-002", { exact: true })).toBeVisible();
   await expect(page.getByText("2 pending alternatives", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Compare alternatives" }).click();
 
   await expect(page.getByRole("heading", { name: "Compare Match Proposals" })).toBeVisible();
+  await expect(currentSection).toHaveText("Review queue");
   const groupURL = page.url();
   const canva = page.getByRole("article", { name: "CANVA* I045" });
   const adobe = page.getByRole("article", { name: "ADOBE* CLOUD" });
@@ -261,6 +265,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   const staleProposal = await context.newPage();
   await staleProposal.goto(new URL(adobeLink, origin).href);
   await expect(staleProposal.getByText("Pending", { exact: true })).toBeVisible();
+  await expect(staleProposal.getByRole("navigation", { name: "Workspace navigation" }).locator('[aria-current="location"]'))
+    .toHaveText("Review queue");
   await staleProposal.getByLabel("Language").selectOption("pt-BR");
   await expect(staleProposal.getByRole("heading", { name: "Evidências originais da proposta" })).toBeVisible();
   await expect(staleProposal).toHaveURL(new URL(adobeLink, origin).href);
@@ -314,8 +320,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(staleProposal.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   await expect(staleProposal.getByText("CANVA* I045", { exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Reconcilio" }).click();
-  await page.getByRole("link", { name: "Open Transactions" }).click();
+  await page.reload();
+  await navigation.getByRole("link", { name: "Open Transactions", exact: true }).click();
   for (const reference of ["ERP-003", "CARD-004"]) {
     const row = page.getByRole("row").filter({ hasText: reference });
     await expect(row.getByText("R$1.00", { exact: true })).toBeVisible();

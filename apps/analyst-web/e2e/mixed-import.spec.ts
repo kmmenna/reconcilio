@@ -12,7 +12,8 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByRole("link", { name: "Catalog", exact: true }).click();
+  const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
+  await navigation.getByRole("link", { name: "Catalog", exact: true }).click();
   const accounts = page.getByRole("region", { name: "Financial Accounts" });
   const sources = page.getByRole("region", { name: "Sources", exact: true });
   await accounts.getByRole("button", { name: "Add Financial Account" }).click();
@@ -34,7 +35,7 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await sources.getByRole("button", { name: "Save" }).click();
   await expect(sources.getByText("Sistema da Matriz", { exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Import CSV" }).click();
+  await navigation.getByRole("link", { name: "Import CSV", exact: true }).click();
   await page.getByLabel("Source", { exact: true }).selectOption({ label: "Sistema da Matriz" });
   await page.getByLabel("Financial Account", { exact: true }).selectOption({ label: "Use account codes from CSV" });
   await page.getByLabel("Start date").fill("11/1/2026");

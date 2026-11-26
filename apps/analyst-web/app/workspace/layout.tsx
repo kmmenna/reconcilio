@@ -6,6 +6,7 @@ import { CreateUserLink } from "@/components/accounts/create-user-link";
 import { LanguageControl } from "@/components/language/language-control";
 import { getWorkspaceProfile } from "@/lib/workspace";
 import { AccountMenu } from "./account-menu";
+import { WorkspaceNavigation } from "./workspace-navigation";
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   const [profile, t] = await Promise.all([getWorkspaceProfile(), getTranslations("Workspace")]);
@@ -19,7 +20,10 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
           {profile && <AccountMenu displayName={profile.display_name} username={profile.username} />}
         </div>
       </header>
-      {children}
+      <div className={profile ? "flex flex-1 flex-col lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]" : "flex-1"}>
+        {profile && <WorkspaceNavigation />}
+        {children}
+      </div>
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-border bg-card px-[max(1.3rem,5vw)] py-3">
         <p className="text-sm text-muted-foreground">Reconcilio · {t("footerDescription")}</p>
         <LanguageControl />

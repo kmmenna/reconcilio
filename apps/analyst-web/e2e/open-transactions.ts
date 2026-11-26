@@ -1,7 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function verifyOpenTransactions(page: Page) {
-  await page.getByRole("link", { name: "Reconcilio" }).click();
   await page.getByRole("link", { name: "Open Transactions" }).click();
   await expect(page.getByRole("heading", { name: "Open Transactions" })).toBeVisible();
   const openURL = page.url();

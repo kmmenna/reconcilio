@@ -46,7 +46,7 @@ test.describe("Browser language preference", () => {
     await page.getByLabel("Username").fill("admin");
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
 
     const footer = page.getByRole("contentinfo");
     const workspaceLanguage = footer.getByRole("combobox");

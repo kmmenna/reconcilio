@@ -22,7 +22,6 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByRole("link", { name: "Import CSV" }).click();
   await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
   const unsupportedMedia = await page.request.post(`${origin}/api/imports`, {
     headers: { Origin: origin },

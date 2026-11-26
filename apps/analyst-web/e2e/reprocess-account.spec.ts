@@ -12,8 +12,9 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  const reconciliations = page.getByRole("link", { name: "Reconciliations" });
-  await expect(reconciliations).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
+  await navigation.getByRole("link", { name: "Reconciliations", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Reconciliations" })).toBeVisible();
 
   const account = { name: "Reprocessing Test Account", code: "reprocessing-smoke" };
   const created = await page.request.post(`${origin}/api/catalog/financial-accounts`, {
