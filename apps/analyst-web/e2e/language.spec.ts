@@ -49,8 +49,13 @@ test.describe("Browser language preference", () => {
     await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
 
     const footer = page.getByRole("contentinfo");
-    const workspaceLanguage = footer.getByRole("combobox");
+    const workspaceLanguage = footer.getByRole("button", { name: /^(Language|Idioma)$/ });
+    const languageMenu = page.getByRole("menu", { name: /^(Language|Idioma)$/ });
     await test.step("keep the footer reachable on short pages and narrow screens", async () => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.getByRole("banner").getByRole("link", { name: "Create user", exact: true }).click();
+      const submit = page.getByRole("main").getByRole("button", { name: "Create user", exact: true });
+      await expect(submit).toBeVisible();
       await expect.poll(() => footer.evaluate((element) => Math.round(element.getBoundingClientRect().bottom - window.innerHeight)))
         .toBe(0);
 
@@ -60,42 +65,77 @@ test.describe("Browser language preference", () => {
       expect(mainBottom).toBeGreaterThan(240);
       expect(await footer.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThanOrEqual(mainBottom);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      await main.getByRole("link").last().focus();
+      await submit.focus();
       await page.keyboard.press("Tab");
       await expect(workspaceLanguage).toBeFocused();
       await expect(workspaceLanguage).toBeInViewport();
       await expect(workspaceLanguage).toHaveCSS("outline-style", "solid");
+      await expect(workspaceLanguage).toHaveAttribute("aria-expanded", "false");
+      await page.keyboard.press("Enter");
+      await expect(workspaceLanguage).toHaveAttribute("aria-expanded", "true");
+      await expect(languageMenu).toBeInViewport({ ratio: 1 });
+      await expect(languageMenu.getByRole("menuitemradio", { name: "Automatic" })).toBeFocused();
+      await page.keyboard.press("End");
+      await expect(languageMenu.getByRole("menuitemradio", { name: "English", checked: true })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(workspaceLanguage).toBeFocused();
+      await expect(workspaceLanguage).toHaveAttribute("aria-expanded", "false");
       await page.setViewportSize({ width: 1280, height: 720 });
     });
 
-    await page.getByRole("link", { name: "Open Transactions" }).click();
-    await expect(page.getByRole("banner").getByRole("combobox")).toHaveCount(0);
+    await page.goto(`${origin}/workspace/transactions`);
+    await expect(page.getByRole("banner").getByRole("button", { name: "Language", exact: true })).toHaveCount(0);
     await expect(footer.getByText("Reconcilio · Transaction reconciliation")).toBeVisible();
-    await expect(footer.getByRole("combobox", { name: "Language" })).toHaveValue("en");
-    await expect(workspaceLanguage.locator("option")).toHaveText(["Automatic", "Português (Brasil)", "English"]);
 
     await test.step("restore browser language from the workspace footer", async () => {
-      await workspaceLanguage.selectOption("auto");
+      await workspaceLanguage.press("Enter");
+      await expect(languageMenu.getByRole("menuitemradio")).toHaveText(["Automatic", "Português (Brasil)", "English"]);
+      await expect(languageMenu.getByRole("menuitemradio", { name: "English", checked: true })).toBeVisible();
+      await expect(languageMenu.getByRole("menuitemradio", { name: "Automatic" })).toBeFocused();
+      await page.keyboard.press("Enter");
       await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
       await expect(page).toHaveURL(`${origin}/workspace/transactions`);
       await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
-      await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");
+      await expect(footer.getByRole("button", { name: "Idioma", exact: true })).toBeFocused();
 
       await page.reload();
       await expect(page).toHaveURL(`${origin}/workspace/transactions`);
       await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
-      await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");
+      await workspaceLanguage.click();
+      await expect(languageMenu.getByRole("menuitemradio", { name: "Automático", checked: true })).toBeVisible();
     });
 
-    await workspaceLanguage.selectOption("pt-BR");
+    await test.step("report a failed language change and keep the saved preference", async () => {
+      await page.keyboard.press("Escape");
+      await expect(workspaceLanguage).toBeFocused();
+      await page.setViewportSize({ width: 320, height: 240 });
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await workspaceLanguage.click();
+      await context.setOffline(true);
+      await languageMenu.getByRole("menuitemradio", { name: "English", exact: true }).click();
+      const alert = footer.getByRole("alert");
+      await expect(alert).toHaveText("Não foi possível alterar o idioma. Tente novamente.");
+      await expect(alert).toBeInViewport({ ratio: 1 });
+      await expect(workspaceLanguage).toBeFocused();
+      await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
+      await context.setOffline(false);
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await workspaceLanguage.click();
+      await expect(languageMenu.getByRole("menuitemradio", { name: "Automático", checked: true })).toBeVisible();
+    });
+
+    await languageMenu.getByRole("menuitemradio", { name: "Português (Brasil)", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
     await expect(footer.getByText("Reconcilio · Conciliação de transações")).toBeVisible();
-    await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
-    await expect(workspaceLanguage.locator("option")).toHaveText(["Automático", "Português (Brasil)", "English"]);
+    await expect(footer.getByRole("alert")).toHaveCount(0);
     await expect(page).toHaveURL(`${origin}/workspace/transactions`);
-    await expect(workspaceLanguage).toBeEnabled();
+    await expect(workspaceLanguage).toHaveAttribute("aria-expanded", "false");
+    await workspaceLanguage.click();
+    await expect(languageMenu.getByRole("menuitemradio", { name: "Português (Brasil)", checked: true })).toBeEnabled();
     await page.reload();
-    await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
+    await workspaceLanguage.click();
+    await expect(languageMenu.getByRole("menuitemradio", { name: "Português (Brasil)", checked: true })).toBeVisible();
+    await page.keyboard.press("Escape");
 
     await page.getByRole("banner").getByRole("button", { name: "Administrator admin", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Meu perfil", exact: true })).toBeVisible();

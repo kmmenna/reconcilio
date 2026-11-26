@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { changeWorkspaceLanguage } from "./workspace-language";
+
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
 test.use({ locale: "en-US" });
@@ -52,7 +54,7 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await page.screenshot({ path: testInfo.outputPath("desktop-summary.png") });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("status")).toHaveText("Concluído");
   await expect(page).toHaveURL(jobURL);
   await expect(completedAt).toHaveAttribute("datetime", timestamp);

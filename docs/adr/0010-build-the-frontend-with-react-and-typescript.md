@@ -10,7 +10,7 @@ Use Tailwind CSS for frontend styling. Localize all frontend surfaces in Portugu
 
 Use next-intl with the App Router and the supported locales `pt-BR` and `en`. Resolve the locale on the server from a valid language preference cookie, then from `Accept-Language`, and fall back to `en` when neither provides a supported language. Set the document language on the first render from the resolved locale.
 
-Show the same language selector on the sign-in page and in the authenticated workspace footer. Offer Automatic, Brazilian Portuguese, and English. Automatic clears the explicit preference so the browser language is used again. Keep the current page when the selection changes.
+Show a native language selector on the sign-in page and a link-styled language menu in the authenticated workspace footer. Share preference handling for Automatic, Brazilian Portuguese, and English, and mark the selected preference inside the menu. Automatic clears the explicit preference so the browser language is used again. Keep the current page when the selection changes.
 
 Localize interface text in Next.js and map stable API error codes to localized messages. Format dates and monetary values for the selected locale using the Transaction's currency. Display imported descriptions as supplied by the Source.
 

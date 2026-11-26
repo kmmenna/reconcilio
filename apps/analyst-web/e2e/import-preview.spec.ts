@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { changeWorkspaceLanguage } from "./workspace-language";
+
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
 test.use({ locale: "en-US" });
@@ -59,7 +61,7 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
 
     const previewURL = page.url();
     expect(new URL(previewURL).pathname).toMatch(/^\/workspace\/imports\/[0-9a-f-]{36}$/);
-    await page.getByLabel("Language").selectOption("pt-BR");
+    await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Prévia da importação" })).toBeVisible();
     await expect(row.getByText("-R$ 89,90", { exact: true })).toBeVisible();
     await expect(page.getByText("16 de nov. de 2026", { exact: true }).first()).toBeVisible();
@@ -70,7 +72,7 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     await expect(row.getByText(text, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(previewURL);
 
-    await page.getByLabel("Idioma").selectOption("en");
+    await changeWorkspaceLanguage(page, "en");
     await page.getByRole("link", { name: "Import another CSV" }).click();
   }
 
@@ -92,7 +94,7 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await expect(error).toContainText("too many decimal places");
   await expect(page).toHaveURL(`${origin}/workspace/imports`);
 
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(error).toContainText("Linha 2 · Valor");
   await expect(error).toContainText("casas decimais demais");
   await expect(page.getByLabel("Data inicial")).toHaveValue("16/11/2026");

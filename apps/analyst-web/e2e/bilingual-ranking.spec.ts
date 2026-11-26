@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { changeWorkspaceLanguage } from "./workspace-language";
+
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 const provider = process.env.RECONCILIO_SMOKE_RANKING_URL;
 
@@ -71,7 +73,7 @@ test("keeps the recorded bilingual ranking on shared links without a provider ca
   await page.screenshot({ path: test.info().outputPath("review-en.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(canva.getByText("As descrições mencionam a mesma assinatura do Canva.")).toBeVisible();
   await expect(adobe.getByText("O lançamento menciona um fornecedor diferente.")).toBeVisible();
   await expect(page.getByRole("article").first()).toHaveAccessibleName("CANVA* I045");
@@ -88,7 +90,7 @@ test("keeps the recorded bilingual ranking on shared links without a provider ca
   await expect(ranked).toHaveAttribute("data-ranking-evaluation-id", evaluation!);
   await expect(ranked.getByText("As descrições mencionam a mesma assinatura do Canva.")).toBeVisible();
   const proposalURL = page.url();
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(ranked.getByText("Both descriptions point to the same Canva subscription.")).toBeVisible();
   await expect(ranked.getByText("Rank 1 · Score 93/100")).toBeVisible();
   await expect(page).toHaveURL(proposalURL);
@@ -99,7 +101,7 @@ test("keeps the recorded bilingual ranking on shared links without a provider ca
   const reconciliationURL = page.url();
   await expect(ranked).toHaveAttribute("data-ranking-evaluation-id", evaluation!);
   await expect(ranked.getByText("Both descriptions point to the same Canva subscription.")).toBeVisible();
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(ranked.getByText("As descrições mencionam a mesma assinatura do Canva.")).toBeVisible();
   await expect(ranked.getByText("Posição 1 · Pontuação 93/100")).toBeVisible();
   await expect(ranked).toHaveAttribute("data-ranking-evaluation-id", evaluation!);

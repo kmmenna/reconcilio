@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+import { changeWorkspaceLanguage } from "./workspace-language";
+
 export async function verifyOpenTransactions(page: Page) {
   await page.getByRole("link", { name: "Open Transactions" }).click();
   await expect(page.getByRole("heading", { name: "Open Transactions" })).toBeVisible();
@@ -33,7 +35,7 @@ export async function verifyOpenTransactions(page: Page) {
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
   await expect(page).toHaveURL(openURL);
   await page.reload();
@@ -48,7 +50,7 @@ export async function verifyOpenTransactions(page: Page) {
   await expect(row("ERP-002").getByText("Propostas pendentes", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await row("ERP-002").getByRole("link", { name: "Pending proposals" }).click();
   await expect(page.getByRole("heading", { name: "Compare Match Proposals" })).toBeVisible();
   await expect(page.getByRole("article", { name: "CANVA* I045" })).toBeVisible();
