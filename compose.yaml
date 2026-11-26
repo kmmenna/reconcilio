@@ -38,6 +38,8 @@ services:
       OPENAI_RESPONSES_URL: ${OPENAI_RESPONSES_URL:-}
       RECONCILIO_AI_PER_JOB_LIMIT: ${RECONCILIO_AI_PER_JOB_LIMIT:-5}
       RECONCILIO_AI_DAILY_LIMIT: ${RECONCILIO_AI_DAILY_LIMIT:-50}
+    ports:
+      - "127.0.0.1:${RECONCILIATION_API_PORT:-8080}:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -51,7 +53,7 @@ services:
     build: ./apps/analyst-web
     environment:
       GO_API_ORIGIN: http://backend:8080
-      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:${ANALYST_WEB_PORT:-3000}}
     ports:
       - "127.0.0.1:${ANALYST_WEB_PORT:-3000}:3000"
     depends_on:
