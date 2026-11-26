@@ -51,3 +51,15 @@ run = "npm exec -- playwright install --with-deps chromium"
 
 [tasks.smoke]
 run = "sh scripts/smoke.sh"
+
+[tasks."compose:up"]
+description = "Build and start the worktree's Compose stack"
+run = "node scripts/orchestration-env.mjs sh scripts/compose.sh up --build -d --wait"
+
+[tasks."compose:logs"]
+description = "Show logs from the worktree's Compose stack"
+run = "node scripts/orchestration-env.mjs sh scripts/compose.sh logs"
+
+[tasks."compose:stop"]
+description = "Stop the worktree's Compose stack and keep PostgreSQL data"
+run = "node scripts/orchestration-env.mjs sh scripts/compose.sh down"

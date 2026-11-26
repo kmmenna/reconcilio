@@ -2,6 +2,7 @@
 set -eu
 
 project="reconcilio-smoke-$$"
+export RECONCILIATION_API_PORT=0
 export ANALYST_WEB_PORT="${RECONCILIO_SMOKE_PORT:-3100}"
 export WEB_ORIGIN="http://localhost:$ANALYST_WEB_PORT"
 export RECONCILIO_SMOKE_ORIGIN="$WEB_ORIGIN"
