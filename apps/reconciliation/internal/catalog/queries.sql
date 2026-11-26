@@ -17,3 +17,10 @@ WHERE id = $1;
 SELECT id, name, side
 FROM sources
 WHERE id = $1;
+
+-- name: LockFinancialAccounts :many
+SELECT id
+FROM financial_accounts
+WHERE id = ANY($1::uuid[])
+ORDER BY id
+FOR NO KEY UPDATE;

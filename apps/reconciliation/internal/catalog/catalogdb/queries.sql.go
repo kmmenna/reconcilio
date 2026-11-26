@@ -88,3 +88,31 @@ func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
 	}
 	return items, nil
 }
+
+const lockFinancialAccounts = `-- name: LockFinancialAccounts :many
+SELECT id
+FROM financial_accounts
+WHERE id = ANY($1::uuid[])
+ORDER BY id
+FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockFinancialAccounts(ctx context.Context, dollar_1 []pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockFinancialAccounts, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

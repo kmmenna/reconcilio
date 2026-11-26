@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button";
 import { getWorkspaceProfile } from "@/lib/workspace";
 
 export default async function WorkspacePage() {
-  const [profile, t, imports] = await Promise.all([
+  const [profile, t, imports, reconciliation] = await Promise.all([
     getWorkspaceProfile(),
     getTranslations("Workspace"),
     getTranslations("Imports"),
+    getTranslations("Reconciliation"),
   ]);
 
   return (
@@ -30,6 +31,9 @@ export default async function WorkspacePage() {
           <div className="mt-5 flex flex-wrap gap-3">
             <Button asChild className="h-11 text-base">
               <Link href="/workspace/imports">{imports("title")}</Link>
+            </Button>
+            <Button asChild variant="outline" className="h-11 text-base">
+              <Link href="/workspace/reconciliations">{reconciliation("title")}</Link>
             </Button>
             <AccountLinks isAdmin={profile.is_admin} />
           </div>

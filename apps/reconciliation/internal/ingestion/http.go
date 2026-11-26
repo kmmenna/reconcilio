@@ -37,7 +37,7 @@ type getPreviewInput struct {
 
 type previewOutput struct {
 	CacheControl string `header:"Cache-Control"`
-	Body         preview
+	Body         importView
 }
 
 func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
@@ -67,7 +67,7 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		OperationID: "get-import-preview",
 		Method:      http.MethodGet,
 		Path:        "/api/imports/{id}",
-		Summary:     "Read a staged import",
+		Summary:     "Read an import preview or receipt",
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
 		Security:    bearer,
 	}, func(ctx context.Context, in *getPreviewInput) (*previewOutput, error) {
@@ -87,6 +87,37 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		}
 		return &previewOutput{CacheControl: "no-store", Body: staged}, nil
 	})
+	huma.Register(api, huma.Operation{
+		OperationID: "confirm-import",
+		Method:      http.MethodPost,
+		Path:        "/api/imports/{id}/confirm",
+		Summary:     "Confirm an import and schedule reconciliation",
+		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
+		Security:    bearer,
+	}, func(ctx context.Context, in *getPreviewInput) (*previewOutput, error) {
+		analystID, err := identities.RequireUser(ctx, in.Authorization)
+		if err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, previewNotFound()
+		}
+		receipt, err := s.confirm(ctx, pgtype.UUID{Bytes: id, Valid: true}, analystID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, previewNotFound()
+		case errors.Is(err, errSourceSideChanged):
+			return nil, httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
+		case errors.Is(err, errImportResolved):
+			return nil, httpapi.NewProblem(http.StatusConflict, "import_already_resolved", "The import has already been resolved.")
+		case err != nil:
+			slog.ErrorContext(ctx, "Could not confirm import", "error", err)
+			return nil, huma.Error500InternalServerError("The import could not be confirmed.")
+		}
+		return &previewOutput{CacheControl: "no-store", Body: receipt}, nil
+	})
+
 }
 
 func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *importForm) (*previewOutput, error) {

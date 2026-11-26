@@ -62,3 +62,15 @@ func sourceFromDB(source catalogdb.Source) Source {
 func accountFromDB(account catalogdb.FinancialAccount) FinancialAccount {
 	return FinancialAccount{ID: account.ID.String(), Code: account.Code, Name: account.Name}
 }
+
+// LockFinancialAccounts serializes confirmation and reconciliation effects for the given accounts.
+func LockFinancialAccounts(ctx context.Context, tx pgx.Tx, ids []pgtype.UUID) error {
+	locked, err := catalogdb.New(tx).LockFinancialAccounts(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("lock financial accounts: %w", err)
+	}
+	if len(locked) != len(ids) {
+		return ErrFinancialAccountNotFound
+	}
+	return nil
+}

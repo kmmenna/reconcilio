@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/identity"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/reconciliation"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/migrations"
 )
 
@@ -79,21 +81,83 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 func serve(ctx context.Context, pool *pgxpool.Pool) error {
+	apiEnabled, err := componentEnabled("RECONCILIO_API_ENABLED")
+	if err != nil {
+		return err
+	}
+	workerEnabled, err := componentEnabled("RECONCILIO_WORKER_ENABLED")
+	if err != nil {
+		return err
+	}
+	if !apiEnabled && !workerEnabled {
+		return errors.New("enable the API, the worker, or both")
+	}
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	reconciler := reconciliation.New(pool)
+	queue, err := reconciliation.NewQueue(pool, reconciler, workerEnabled)
+	if err != nil {
+		return err
+	}
+
+	var server *http.Server
+	if apiEnabled {
+		server, err = configureHTTP(pool, reconciler, queue)
+		if err != nil {
+			return err
+		}
+	}
+	if workerEnabled {
+		workerContext, stopWorker := context.WithCancel(ctx)
+		if err := startWorker(workerContext, queue); err != nil {
+			stopWorker()
+			return err
+		}
+		defer func() {
+			stopWorker()
+			<-queue.Stopped()
+		}()
+	}
+	if server != nil {
+		return serveHTTP(ctx, server)
+	}
+	<-ctx.Done()
+	return nil
+}
+
+func componentEnabled(variable string) (bool, error) {
+	enabled, err := strconv.ParseBool(cmp.Or(os.Getenv(variable), "true"))
+	if err != nil {
+		return false, fmt.Errorf("configure %s: %w", variable, err)
+	}
+	return enabled, nil
+}
+
+func startWorker(ctx context.Context, queue *reconciliation.Queue) error {
+	if err := queue.Start(ctx); err != nil {
+		return fmt.Errorf("start reconciliation worker: %w", err)
+	}
+	slog.Info("Reconciliation worker started")
+	return nil
+}
+
+func configureHTTP(pool *pgxpool.Pool, reconciler *reconciliation.Service, queue *reconciliation.Queue) (*http.Server, error) {
 	key := []byte(os.Getenv("JWT_SECRET"))
 	if len(key) == 0 {
 		key = make([]byte, 32)
 		rand.Read(key)
 	} else if len(key) < 32 {
-		return errors.New("JWT_SECRET must contain at least 32 bytes")
+		return nil, errors.New("JWT_SECRET must contain at least 32 bytes")
 	}
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("connect to database: %w", err)
-	}
-	server := &http.Server{
+	return &http.Server{
 		Addr:              cmp.Or(os.Getenv("HTTP_ADDR"), ":8080"),
-		Handler:           newHandler(pool, key),
+		Handler:           newHandler(pool, key, reconciler, queue),
 		ReadHeaderTimeout: 5 * time.Second,
-	}
+	}, nil
+}
+
+func serveHTTP(ctx context.Context, server *http.Server) error {
 	serveResult := make(chan error, 1)
 	go func() {
 		slog.Info("API listening", "address", server.Addr)
@@ -110,7 +174,7 @@ func serve(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 }
 
-func newHandler(pool *pgxpool.Pool, key []byte) http.Handler {
+func newHandler(pool *pgxpool.Pool, key []byte, reconciler *reconciliation.Service, queue *reconciliation.Queue) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -121,6 +185,8 @@ func newHandler(pool *pgxpool.Pool, key []byte) http.Handler {
 	accounts.RegisterHTTP(api)
 	entries := catalog.New(pool)
 	entries.RegisterHTTP(api, accounts)
-	ingestion.New(pool, entries).RegisterHTTP(api, accounts)
+	ingestion.New(pool, entries, queue).RegisterHTTP(api, accounts)
+	queue.RegisterHTTP(api, accounts)
+	reconciler.RegisterHTTP(api, accounts)
 	return mux
 }
