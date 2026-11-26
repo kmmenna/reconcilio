@@ -16,10 +16,7 @@ import (
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 )
 
-var (
-	errImportResolved    = errors.New("import has already been resolved")
-	errSourceSideChanged = errors.New("source side has changed")
-)
+var errImportResolved = errors.New("import has already been resolved")
 
 type jobEnqueuer interface {
 	EnqueueTx(context.Context, pgx.Tx, pgtype.UUID) (int64, error)
@@ -35,14 +32,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 	var reviewProblem *httpapi.Problem
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := s.queries.WithTx(tx)
-		accountID, err := queries.GetImportAccountID(ctx, id)
-		if err != nil {
-			return err
-		}
-		if err := catalog.LockFinancialAccounts(ctx, tx, []pgtype.UUID{accountID}); err != nil {
-			return err
-		}
-		record, err := queries.GetImportForConfirmation(ctx, id)
+		record, accounts, err := lockImportAccounts(ctx, tx, queries, id)
 		if err != nil {
 			return err
 		}
@@ -55,14 +45,10 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 		}
 
 		source := catalog.Source{ID: record.SourceID.String(), Name: record.SourceName, Side: record.SourceSide}
-		account := catalog.FinancialAccount{ID: accountID.String(), Code: record.FinancialAccountCode, Name: record.FinancialAccountName}
-		receipt = importView{
-			ID: id.String(), Source: source, FinancialAccount: account,
-			PeriodStart: record.PeriodStart.Time.Format(time.DateOnly), PeriodEnd: record.PeriodEnd.Time.Format(time.DateOnly),
-		}
-		var document previewDocument
-		if err := json.Unmarshal(record.Preview, &document); err != nil {
-			return fmt.Errorf("decode preview rows: %w", err)
+		receipt = newImportView(id, source, accounts, record.PeriodStart, record.PeriodEnd)
+		document, err := decodePreview(record.Preview)
+		if err != nil {
+			return err
 		}
 		if cancel {
 			receipt.Status = "canceled"
@@ -76,10 +62,19 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			}
 			return queries.CancelImport(ctx, ingestiondb.CancelImportParams{ID: id, Receipt: observation})
 		}
-		if record.SourceSide != record.CurrentSourceSide {
-			return errSourceSideChanged
+		currentSource, err := catalog.LockSourceForImport(ctx, tx, record.SourceID)
+		if err != nil {
+			return err
 		}
-		replay, err := findReplay(ctx, queries, record.SourceID, accountID, record.FileFingerprint)
+		if record.SourceSide != currentSource.Side {
+			problem := httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
+			problem.Context = importProblemContext{
+				PreviewSourceSide: record.SourceSide, CurrentSourceSide: currentSource.Side,
+			}
+			return problem
+		}
+		receipt.Source = currentSource
+		replay, err := findReplay(ctx, queries, record.SourceID, accountIDs(accounts), record.FileFingerprint)
 		if err != nil {
 			return err
 		}
@@ -91,20 +86,13 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			return queries.ResolveImportReplay(ctx, ingestiondb.ResolveImportReplayParams{ID: id, OriginalID: replay.ID})
 		}
 
-		assessment, err := assessAccount(ctx, queries, record.SourceID, accountID, document.Rows)
+		assessments, conflicts, err := assessImport(ctx, queries, record.SourceID, record.PeriodStart, record.PeriodEnd, accounts, document.Rows)
 		if err != nil {
 			return err
 		}
-		if err := checkCoverage(ctx, queries, ingestiondb.FindBlockedCoverageParams{
-			SourceID: record.SourceID, FinancialAccountID: accountID,
-			IncomingStart: record.PeriodStart, IncomingEnd: record.PeriodEnd,
-			IncomingHasSourceReferences: assessment.AllHaveSourceReferences,
-		}, account); err != nil {
-			return err
-		}
-		if !slices.EqualFunc(document.Conflicts, assessment.Conflicts, func(a, b importConflict) bool { return a.ID == b.ID }) {
-			document.Conflicts = assessment.Conflicts
-			preview := presentPreview(id, source, account, record.PeriodStart, record.PeriodEnd, document)
+		if !slices.EqualFunc(document.Conflicts, conflicts, func(a, b importConflict) bool { return a.ID == b.ID }) {
+			document.Conflicts = conflicts
+			preview := presentPreview(id, currentSource, accounts, record.PeriodStart, record.PeriodEnd, document)
 			reviewProblem = conflictProblem("import_conflicts_changed", "The conflicts changed. Review the updated preview.", preview)
 			// Commit the updated preview before returning 409 so the same ID can be reviewed again.
 			data, err := json.Marshal(document)
@@ -114,44 +102,33 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			return queries.UpdateImportPreview(ctx, ingestiondb.UpdateImportPreviewParams{ID: id, Preview: data})
 		}
 		if !acceptsConflicts(document.Conflicts, keepIDs) {
-			preview := presentPreview(id, source, account, record.PeriodStart, record.PeriodEnd, document)
+			preview := presentPreview(id, currentSource, accounts, record.PeriodStart, record.PeriodEnd, document)
 			return conflictProblem("import_conflicts_require_review", "Review the conflicts before confirming.", preview)
 		}
 
-		transactions := make([]ingestiondb.InsertTransactionsParams, 0, len(assessment.NewRows))
-		for _, row := range assessment.NewRows {
-			date, err := time.Parse(time.DateOnly, row.TransactionDate)
-			if err != nil {
-				return fmt.Errorf("decode staged transaction date: %w", err)
-			}
-			transactions = append(transactions, ingestiondb.InsertTransactionsParams{
-				ImportID: id, FinancialAccountID: accountID, SourceID: record.SourceID, SourceSide: record.SourceSide,
-				SourceReference:  pgtype.Text{String: row.SourceReference, Valid: row.SourceReference != ""},
-				PaymentReference: pgtype.Text{String: row.PaymentReference, Valid: row.PaymentReference != ""},
-				TransactionDate:  pgtype.Date{Time: date, Valid: true},
-				AmountMinor:      row.MinorUnits, Currency: row.Currency, MinorDigits: int32(row.MinorDigits), Description: row.Description,
-			})
-		}
-		count, err := queries.InsertTransactions(ctx, transactions)
-		if err != nil {
-			return fmt.Errorf("persist imported transactions: %w", err)
-		}
-		jobID, err := s.jobs.EnqueueTx(ctx, tx, accountID)
+		count, err := insertImportTransactions(ctx, queries, record, assessments, len(document.Rows))
 		if err != nil {
 			return err
 		}
-		if err := queries.InsertImportCoverage(ctx, ingestiondb.InsertImportCoverageParams{
-			ImportID: id, FinancialAccountID: accountID, SourceID: record.SourceID, PeriodStart: record.PeriodStart,
-			PeriodEnd: record.PeriodEnd, AllHaveSourceReferences: assessment.AllHaveSourceReferences, JobID: jobID,
-		}); err != nil {
-			return fmt.Errorf("record import coverage: %w", err)
+		for _, assessment := range assessments {
+			jobID, err := s.jobs.EnqueueTx(ctx, tx, assessment.id)
+			if err != nil {
+				return err
+			}
+			if err := queries.InsertImportCoverage(ctx, ingestiondb.InsertImportCoverageParams{
+				ImportID: id, FinancialAccountID: assessment.id, SourceID: record.SourceID,
+				PeriodStart: record.PeriodStart, PeriodEnd: record.PeriodEnd,
+				AllHaveSourceReferences: assessment.AllHaveSourceReferences, JobID: jobID,
+			}); err != nil {
+				return fmt.Errorf("record import coverage: %w", err)
+			}
+			receipt.Jobs = append(receipt.Jobs, scheduledJob{FinancialAccount: assessment.entry, JobID: jobID})
 		}
 		confirmedAt := time.Now().UTC().Truncate(time.Microsecond)
 		receipt.Status = "confirmed"
 		receipt.ConfirmedAt = &confirmedAt
 		receipt.ConfirmedBy = analystID.String()
 		receipt.TransactionCount = new(count)
-		receipt.Jobs = []scheduledJob{{FinancialAccount: account, JobID: jobID}}
 		if len(document.Conflicts) > 0 {
 			receipt.Decision = "keep_original"
 			receipt.Conflicts = document.Conflicts
@@ -168,6 +145,30 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 		err = reviewProblem
 	}
 	return receipt, err
+}
+
+func insertImportTransactions(ctx context.Context, queries *ingestiondb.Queries, record ingestiondb.GetImportRow, assessments []assessedAccount, totalRows int) (int64, error) {
+	transactions := make([]ingestiondb.InsertTransactionsParams, 0, totalRows)
+	for _, assessment := range assessments {
+		for _, row := range assessment.NewRows {
+			date, err := time.Parse(time.DateOnly, row.TransactionDate)
+			if err != nil {
+				return 0, fmt.Errorf("decode staged transaction date: %w", err)
+			}
+			transactions = append(transactions, ingestiondb.InsertTransactionsParams{
+				ImportID: record.ID, FinancialAccountID: assessment.id, SourceID: record.SourceID, SourceSide: record.SourceSide,
+				SourceReference:  pgtype.Text{String: row.SourceReference, Valid: row.SourceReference != ""},
+				PaymentReference: pgtype.Text{String: row.PaymentReference, Valid: row.PaymentReference != ""},
+				TransactionDate:  pgtype.Date{Time: date, Valid: true},
+				AmountMinor:      row.MinorUnits, Currency: row.Currency, MinorDigits: int32(row.MinorDigits), Description: row.Description,
+			})
+		}
+	}
+	count, err := queries.InsertTransactions(ctx, transactions)
+	if err != nil {
+		return 0, fmt.Errorf("persist imported transactions: %w", err)
+	}
+	return count, nil
 }
 
 func acceptsConflicts(conflicts []importConflict, keepIDs []string) bool {

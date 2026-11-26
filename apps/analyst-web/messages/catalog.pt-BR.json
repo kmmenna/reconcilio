@@ -1,0 +1,31 @@
+{
+  "title": "Catálogo",
+  "accounts": "Contas financeiras",
+  "sources": "Fontes",
+  "addAccount": "Adicionar conta financeira",
+  "addSource": "Adicionar fonte",
+  "emptyAccounts": "Adicione uma conta financeira para vincular linhas a ela durante a importação.",
+  "emptySources": "Adicione uma fonte para começar a importar os registros dela.",
+  "edit": "Editar",
+  "editNamed": "Editar {name}",
+  "name": "Nome",
+  "code": "Código",
+  "codeHelp": "Use este código permanente na coluna financial_account dos CSVs com várias contas.",
+  "side": "Lado",
+  "sideLocked": "O lado fica fixo após a primeira importação confirmada.",
+  "save": "Salvar",
+  "saving": "Salvando…",
+  "saved": "Alterações salvas.",
+  "cancel": "Cancelar",
+  "problems": {
+    "catalog_unavailable": "O catálogo está temporariamente indisponível. Tente novamente.",
+    "catalog_entry_not_found": "Este cadastro não foi encontrado.",
+    "financial_account_not_found": "Esta conta financeira não foi encontrada.",
+    "source_not_found": "Esta fonte não foi encontrada.",
+    "financial_account_code_in_use": "Este código de conta financeira já está em uso.",
+    "source_side_locked": "Uma importação desta fonte foi confirmada. Você ainda pode editar o nome.",
+    "invalid_catalog_entry": "Confira os campos do cadastro.",
+    "invalid_origin": "Recarregue a página e tente novamente.",
+    "validation_failed": "Confira os campos do cadastro."
+  }
+}

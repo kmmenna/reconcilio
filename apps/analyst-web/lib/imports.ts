@@ -4,6 +4,10 @@ export type Source = {
   side: "internal" | "external";
 };
 
+export type SourceEntry = Source & {
+  side_editable: boolean;
+};
+
 export type FinancialAccount = {
   id: string;
   code: string;
@@ -12,6 +16,7 @@ export type FinancialAccount = {
 
 export type PreviewRow = {
   line: number;
+  financial_account_id?: string;
   source_reference?: string;
   payment_reference?: string;
   transaction_date: string;
@@ -22,7 +27,7 @@ export type PreviewRow = {
 
 export type ConflictField = "amount" | "currency" | "transaction_date" | "payment_reference";
 
-export type TransactionValues = Omit<PreviewRow, "line"> & {
+export type TransactionValues = Omit<PreviewRow, "line" | "financial_account_id"> & {
   transaction_id?: string;
 };
 
@@ -47,7 +52,8 @@ export type CoverageOverlap = {
 type ImportSummary = {
   id: string;
   source: Source;
-  financial_account: FinancialAccount;
+  financial_account?: FinancialAccount;
+  financial_accounts?: FinancialAccount[];
   period_start: string;
   period_end: string;
   conflicts?: ImportConflict[];
@@ -80,12 +86,18 @@ export type ImportIssue = {
   line?: number;
   field: string;
   reason: string;
+  value?: string;
 };
 
 export type ImportProblem = {
   code: string;
   issues?: ImportIssue[];
-  context?: { coverage?: CoverageOverlap; preview?: ImportPreview };
+  context?: {
+    coverage?: CoverageOverlap;
+    preview?: ImportPreview;
+    preview_source_side?: Source["side"];
+    current_source_side?: Source["side"];
+  };
 };
 
 export const csvColumns = [

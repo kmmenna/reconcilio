@@ -11,14 +11,18 @@ import { csvColumns, type FinancialAccount, type ImportView, type ImportProblem,
 import type importMessages from "@/messages/imports.en.json";
 import { CoverageOverlap } from "./coverage-overlap";
 import { ImportDateField } from "./import-date-field";
+import { ImportIssues } from "./import-issues";
 
 type Field = keyof typeof importMessages.fields;
-type Reason = keyof typeof importMessages.reasons;
 type ProblemCode = keyof typeof importMessages.problems;
+
+const fromCSV = "from-csv";
 
 export function ImportForm({ sources, financialAccounts }: { sources: Source[]; financialAccounts: FinancialAccount[] }) {
   const t = useTranslations("Imports");
   const router = useRouter();
+  const [selection, setSelection] = useState("");
+  const mixed = selection === fromCSV;
   const [fileName, setFileName] = useState("");
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<ImportProblem | null>(null);
@@ -27,6 +31,14 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
     event.preventDefault();
     if (pending) return;
     const body = new FormData(event.currentTarget);
+    if (mixed) body.delete("financial_account_id");
+    if (!selection) {
+      setProblem({
+        code: "invalid_import_selection",
+        issues: [{ field: "financial_account_id", reason: "invalid_financial_account" }],
+      });
+      return;
+    }
     const file = body.get("file");
     if (!(file instanceof File) || !file.name) {
       setProblem({
@@ -86,8 +98,17 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
           </div>
           <div className="space-y-2">
             <Label htmlFor="financial_account_id">{t("fields.financial_account_id")}</Label>
-            <NativeSelect {...fieldError("financial_account_id")} className="h-11 max-w-full shadow-none" id="financial_account_id" name="financial_account_id" defaultValue="" required>
+            <NativeSelect
+              {...fieldError("financial_account_id")}
+              className="h-11 max-w-full shadow-none"
+              id="financial_account_id"
+              name="financial_account_id"
+              value={selection}
+              onChange={(event) => setSelection(event.currentTarget.value)}
+              required
+            >
               <NativeSelectOption value="" disabled>{t("chooseAccount")}</NativeSelectOption>
+              <NativeSelectOption value={fromCSV}>{t("useCSVAccountCodes")}</NativeSelectOption>
               {financialAccounts.map((account) => <NativeSelectOption key={account.id} value={account.id}>{account.name}</NativeSelectOption>)}
             </NativeSelect>
           </div>
@@ -96,6 +117,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
         </div>
 
         <div className="space-y-3 border-t border-border pt-5">
+          {mixed && <p className="text-sm text-muted-foreground">{t("mixedHelp")}</p>}
           <Label htmlFor="csv-file">{t("fields.file")}</Label>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <input
@@ -123,7 +145,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
             <summary className="w-fit cursor-pointer text-primary underline-offset-4 hover:underline">{t("fileFormat")}</summary>
             <p className="mt-2">{t("fileFormatHelp")}</p>
             <code className="mt-2 block rounded-md bg-accent p-3 text-xs text-foreground wrap-anywhere">
-              {csvColumns.join(",")}
+              {(mixed ? [...csvColumns, "financial_account"] : csvColumns).join(",")}
             </code>
           </details>
         </div>
@@ -135,21 +157,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
             {t(t.has(`problems.${problem.code as ProblemCode}`) ? `problems.${problem.code as ProblemCode}` : "problems.preview_unavailable")}
           </p>
           {problem.context?.coverage && <CoverageOverlap coverage={problem.context.coverage} />}
-          {problem.issues?.length ? (
-            <ul className="mt-2 space-y-2">
-              {problem.issues.map(({ line, field, reason }, index) => {
-                const fieldKey = `fields.${field as Field}` as const;
-                const reasonKey = !line && reason === "invalid_date" ? "reasons.invalid_form_date" : `reasons.${reason as Reason}` as const;
-                const label = t.has(fieldKey) ? t(fieldKey) : field;
-                return (
-                  <li key={`${line}-${field}-${reason}-${index}`}>
-                    <span className="font-medium">{line ? t("errorLine", { line, field: label }) : label}</span>
-                    <span className="block">{t(t.has(reasonKey) ? reasonKey : "reasons.unknown")}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
+          <ImportIssues issues={problem.issues} />
         </div>
       )}
       <Button className="mt-6 h-11" disabled={pending} type="submit">

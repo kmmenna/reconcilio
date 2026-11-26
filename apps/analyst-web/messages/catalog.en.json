@@ -1,0 +1,31 @@
+{
+  "title": "Catalog",
+  "accounts": "Financial Accounts",
+  "sources": "Sources",
+  "addAccount": "Add Financial Account",
+  "addSource": "Add Source",
+  "emptyAccounts": "Add a Financial Account to assign rows to it during import.",
+  "emptySources": "Add a Source to start importing its records.",
+  "edit": "Edit",
+  "editNamed": "Edit {name}",
+  "name": "Name",
+  "code": "Code",
+  "codeHelp": "Use this permanent code in the financial_account column of mixed CSVs.",
+  "side": "Side",
+  "sideLocked": "The side is fixed after the first confirmed import.",
+  "save": "Save",
+  "saving": "Saving…",
+  "saved": "Changes saved.",
+  "cancel": "Cancel",
+  "problems": {
+    "catalog_unavailable": "The catalog is temporarily unavailable. Try again.",
+    "catalog_entry_not_found": "This entry could not be found.",
+    "financial_account_not_found": "This Financial Account could not be found.",
+    "source_not_found": "This Source could not be found.",
+    "financial_account_code_in_use": "This Financial Account code is already in use.",
+    "source_side_locked": "An import has been confirmed for this Source. You can still edit its name.",
+    "invalid_catalog_entry": "Check the catalog fields.",
+    "invalid_origin": "Reload the page and try again.",
+    "validation_failed": "Check the catalog fields."
+  }
+}
