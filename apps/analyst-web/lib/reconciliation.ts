@@ -3,11 +3,12 @@ import type { FinancialAccount, Source } from "@/lib/imports";
 export type ReconciliationJob = {
   id: number;
   financial_account_id: string;
-  status: "queued" | "running" | "retrying" | "completed" | "failed" | "cancelled";
+  status: "queued" | "deferred" | "running" | "retrying" | "completed" | "failed" | "cancelled";
   attempt: number;
   max_attempts: number;
   completed_at?: string;
   automatic_count?: number;
+  proposal_count?: number;
 };
 
 export type Reconciliation = {
