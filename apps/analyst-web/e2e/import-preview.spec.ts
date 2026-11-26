@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
@@ -30,7 +31,11 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
     await page.getByLabel("Start date").fill("11/16/2026");
     await page.getByLabel("End date").fill("11/22/2026");
-    await page.getByLabel("CSV file", { exact: true }).setInputFiles(resolve(__dirname, "../../../examples/demo", fixture));
+    const data = await readFile(resolve(__dirname, "../../../examples/demo", fixture));
+    // Keep this preview distinct from the confirmation smoke test's exact file replay.
+    await page.getByLabel("CSV file", { exact: true }).setInputFiles({
+      name: fixture, mimeType: "text/csv", buffer: Buffer.concat([data, Buffer.from("\n")]),
+    });
     await page.getByRole("button", { name: "Preview CSV" }).click();
     await expect(page.getByRole("heading", { name: "Import preview" })).toBeVisible();
     await expect(page.getByText("Pending review", { exact: true })).toBeVisible();

@@ -28,7 +28,28 @@ import (
 
 const csvHeader = "source_reference,payment_reference,transaction_date,amount,currency,description\n"
 
+type conflictResponse struct {
+	ID     string   `json:"id"`
+	Line   int      `json:"line"`
+	Fields []string `json:"fields"`
+	Stored struct {
+		TransactionID   string `json:"transaction_id"`
+		SourceReference string `json:"source_reference"`
+		Amount          string `json:"amount"`
+		Currency        string `json:"currency"`
+		Description     string `json:"description"`
+	} `json:"stored"`
+	Incoming struct {
+		Amount   string `json:"amount"`
+		Currency string `json:"currency"`
+	} `json:"incoming"`
+}
+
 type previewResponse struct {
+	Conflicts        []conflictResponse `json:"conflicts"`
+	Decision         string             `json:"decision"`
+	TransactionCount *int               `json:"transaction_count"`
+
 	ID     string `json:"id"`
 	Status string `json:"status"`
 	Source struct {
@@ -195,7 +216,7 @@ func TestCSVImportPreview(t *testing.T) {
 
 	t.Run("confirms a preview once and durably queues the account", func(t *testing.T) {
 		var preview previewResponse
-		readResponse(t, upload(session.Token, sourceID, accountID, start, end, strings.ReplaceAll(csv, "001", "TEST")), http.StatusCreated, &preview)
+		readResponse(t, upload(session.Token, sourceID, accountID, start, end, strings.ReplaceAll(strings.ReplaceAll(csv, "001", "TEST"), "\n,,", "\nERP-FREE-TEST,,")), http.StatusCreated, &preview)
 		path := "/api/imports/" + preview.ID
 		var first, second *httptest.ResponseRecorder
 		var confirmations sync.WaitGroup
@@ -415,6 +436,87 @@ func TestCSVImportPreview(t *testing.T) {
 			t.Fatalf("unexpected reconciliation detail: %+v", detail)
 		}
 
+		t.Run("keeps the reconciled transaction and lets analysts cancel before importing new rows", func(t *testing.T) {
+			fixture, err := os.ReadFile("../../../../examples/test-cases/reimport-amount-conflict.csv")
+			if err != nil {
+				t.Fatal(err)
+			}
+			probe := csvHeader + "ERP-004,,2026-11-22,-35.00,BRL,Office parking\n"
+			stageConflict := func() previewResponse {
+				t.Helper()
+				var staged previewResponse
+				readResponse(t, upload(session.Token, sourceID, accountID, start, end, string(fixture)), http.StatusCreated, &staged)
+				if len(staged.Conflicts) != 1 {
+					t.Fatalf("expected one amount conflict: %+v", staged.Conflicts)
+				}
+				conflict := staged.Conflicts[0]
+				if conflict.ID == "" || conflict.Line != 2 || !slices.Equal(conflict.Fields, []string{"amount"}) ||
+					conflict.Stored.TransactionID == "" || conflict.Stored.SourceReference != "ERP-001" ||
+					conflict.Stored.Amount != "-89.90" || conflict.Stored.Currency != "BRL" ||
+					conflict.Incoming.Amount != "-94.90" || conflict.Incoming.Currency != "BRL" {
+					t.Fatalf("unexpected preview conflict: %+v", conflict)
+				}
+				return staged
+			}
+			unchangedReconciliation := func() {
+				t.Helper()
+				after := request(http.MethodGet, detailPath, session.Token, "", nil)
+				if after.Code != http.StatusOK || after.Body.String() != initialDetail.Body.String() {
+					t.Fatalf("the original reconciliation changed: status=%d %s", after.Code, after.Body)
+				}
+			}
+
+			staged := stageConflict()
+			path := "/api/imports/" + staged.ID
+			var canceled previewResponse
+			cancel := request(http.MethodPost, path+"/cancel", session.Token, "", nil)
+			readResponse(t, cancel, http.StatusOK, &canceled)
+			if canceled.Status != "canceled" || canceled.Decision != "cancel" || len(canceled.Rows) != 0 ||
+				len(canceled.Conflicts) != 1 || canceled.Conflicts[0].ID != staged.Conflicts[0].ID {
+				t.Fatalf("unexpected cancellation: %+v", canceled)
+			}
+			for _, retry := range []*httptest.ResponseRecorder{
+				request(http.MethodPost, path+"/cancel", session.Token, "", nil),
+				request(http.MethodGet, path, session.Token, "", nil),
+			} {
+				if retry.Code != http.StatusOK || cancel.Body.String() != retry.Body.String() {
+					t.Fatalf("cancellation receipt changed: status=%d %s", retry.Code, retry.Body)
+				}
+			}
+			var absent previewResponse
+			readResponse(t, upload(session.Token, sourceID, accountID, start, end, probe), http.StatusCreated, &absent)
+			if len(absent.Conflicts) != 0 {
+				t.Fatalf("canceling inserted ERP-004: %+v", absent.Conflicts)
+			}
+			unchangedReconciliation()
+
+			staged = stageConflict()
+			path = "/api/imports/" + staged.ID
+			body := strings.NewReader(fmt.Sprintf(`{"keep_original_conflict_ids":[%q]}`, staged.Conflicts[0].ID))
+			var kept previewResponse
+			confirm := request(http.MethodPost, path+"/confirm", session.Token, "application/json", body)
+			readResponse(t, confirm, http.StatusOK, &kept)
+			if kept.Status != "confirmed" || kept.Decision != "keep_original" || kept.TransactionCount == nil || *kept.TransactionCount != 1 ||
+				len(kept.Rows) != 0 || len(kept.Conflicts) != 1 || kept.Conflicts[0].ID != staged.Conflicts[0].ID {
+				t.Fatalf("unexpected confirmation: %+v", kept)
+			}
+			var imported previewResponse
+			readResponse(t, upload(session.Token, sourceID, accountID, start, end, probe), http.StatusCreated, &imported)
+			if len(imported.Conflicts) != 1 || imported.Conflicts[0].Stored.SourceReference != "ERP-004" ||
+				imported.Conflicts[0].Stored.Amount != "-34.50" {
+				t.Fatalf("keeping ERP-001 did not import ERP-004: %+v", imported.Conflicts)
+			}
+			for _, retry := range []*httptest.ResponseRecorder{
+				request(http.MethodPost, path+"/confirm", session.Token, "", nil),
+				upload(session.Token, sourceID, accountID, start, end, string(fixture)),
+			} {
+				if retry.Code != http.StatusOK || confirm.Body.String() != retry.Body.String() {
+					t.Fatalf("confirmation receipt changed: status=%d %s", retry.Code, retry.Body)
+				}
+			}
+			unchangedReconciliation()
+		})
+
 		waitForJob(confirmImport(stageCSV(sourceID, csvHeader+"ERP-LATE,DEMO-PAY-001,2026-11-16,-89.90,BRL,Another internal record\n")), 0)
 		waitForJob(confirmImport(stageCSV(externalID, csvHeader+"CARD-LATE,DEMO-PAY-001,2026-11-16,-89.90,BRL,Another external record\n")), 0)
 		if after := request(http.MethodGet, detailPath, session.Token, "", nil); after.Body.String() != initialDetail.Body.String() {
@@ -428,6 +530,175 @@ func TestCSVImportPreview(t *testing.T) {
 			http.StatusOK, &results)
 		if len(results) != 0 {
 			t.Fatalf("filter returned results from another Financial Account: %+v", results)
+		}
+	})
+
+	t.Run("blocks inclusive coverage for either import with missing references and replays exact files", func(t *testing.T) {
+		const october1, october5, october6, october10 = "2026-10-01", "2026-10-05", "2026-10-06", "2026-10-10"
+		const referenceFree = csvHeader + ",,2026-10-01,4.90,BRL,No Source Reference\n"
+		stage := func(first, last, data string) previewResponse {
+			t.Helper()
+			var staged previewResponse
+			readResponse(t, upload(session.Token, sourceID, accountID, first, last, data), http.StatusCreated, &staged)
+			return staged
+		}
+		confirm := func(staged previewResponse, status int, body any) *httptest.ResponseRecorder {
+			t.Helper()
+			response := request(http.MethodPost, "/api/imports/"+staged.ID+"/confirm", session.Token, "", nil)
+			readResponse(t, response, status, body)
+			return response
+		}
+
+		exactStaged := stage(october1, october5, referenceFree)
+		refStaged := stage(october5, october10, csvHeader+"OCT-001,,2026-10-05,1,BRL,Has a Reference\n")
+		var original previewResponse
+		first := confirm(stage(october1, october5, referenceFree), http.StatusOK, &original)
+		for _, replay := range []*httptest.ResponseRecorder{
+			confirm(exactStaged, http.StatusOK, &original),
+			request(http.MethodGet, "/api/imports/"+exactStaged.ID, session.Token, "", nil),
+			upload(session.Token, sourceID, accountID, october5, october10, referenceFree),
+		} {
+			if replay.Code != http.StatusOK || replay.Body.String() != first.Body.String() {
+				t.Fatalf("exact reference-free replay was not recognized: status=%d %s", replay.Code, replay.Body)
+			}
+		}
+		var conflict struct {
+			Code    string `json:"code"`
+			Context struct {
+				Coverage struct {
+					ImportID    string `json:"import_id"`
+					PeriodStart string `json:"period_start"`
+					PeriodEnd   string `json:"period_end"`
+				} `json:"coverage"`
+			} `json:"context"`
+		}
+		for _, blocked := range []*httptest.ResponseRecorder{
+			confirm(refStaged, http.StatusConflict, &conflict),
+			upload(session.Token, sourceID, accountID, october5, october10, csvHeader+"OCT-002,,2026-10-05,1,BRL,Has a Reference\n"),
+		} {
+			readResponse(t, blocked, http.StatusConflict, &conflict)
+			if conflict.Code != "import_coverage_overlap" || conflict.Context.Coverage.ImportID != original.ID ||
+				conflict.Context.Coverage.PeriodStart != october1 || conflict.Context.Coverage.PeriodEnd != october5 {
+				t.Fatalf("unexpected coverage conflict: %+v", conflict)
+			}
+		}
+		var next previewResponse
+		confirm(stage(october6, october10, csvHeader+"OCT-003,,2026-10-06,1,BRL,Adjacent dates\n"), http.StatusOK, &next)
+		noRef := upload(session.Token, sourceID, accountID, october10, october10, csvHeader+",,2026-10-10,1,BRL,No reference\n")
+		readResponse(t, noRef, http.StatusConflict, &conflict)
+		if conflict.Code != "import_coverage_overlap" || conflict.Context.Coverage.ImportID != next.ID {
+			t.Fatalf("incoming reference-free row did not block overlap: %+v", conflict)
+		}
+		var differentSourceID string
+		for _, source := range sources {
+			if source.ID != sourceID {
+				differentSourceID = source.ID
+			}
+		}
+		var scoped previewResponse
+		readResponse(t, upload(session.Token, differentSourceID, accountID, october1, october5, referenceFree), http.StatusCreated, &scoped)
+		if scoped.Status != "pending" || scoped.Source.ID != differentSourceID {
+			t.Fatalf("coverage or replay leaked across Sources: %+v", scoped)
+		}
+	})
+
+	t.Run("restages conflicts found during concurrent confirmation on the same preview", func(t *testing.T) {
+		var first, second previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, start, end,
+			csvHeader+"ERP-RACE,PAY-A,2026-11-16,10,BRL,First delivery\n"), http.StatusCreated, &first)
+		readResponse(t, upload(session.Token, sourceID, accountID, start, end,
+			csvHeader+"ERP-RACE,PAY-B,2026-11-17,11.500,KWD,Second delivery\n"), http.StatusCreated, &second)
+		if len(first.Conflicts)+len(second.Conflicts) != 0 {
+			t.Fatal("both previews should be conflict-free before either confirms")
+		}
+		paths := []string{"/api/imports/" + first.ID, "/api/imports/" + second.ID}
+		responses := make([]*httptest.ResponseRecorder, len(paths))
+		var confirmations sync.WaitGroup
+		for i, path := range paths {
+			confirmations.Go(func() { responses[i] = request(http.MethodPost, path+"/confirm", session.Token, "", nil) })
+		}
+		confirmations.Wait()
+		loser := 1
+		if responses[0].Code == http.StatusConflict {
+			loser = 0
+		}
+		var winner previewResponse
+		readResponse(t, responses[1-loser], http.StatusOK, &winner)
+		if winner.TransactionCount == nil || *winner.TransactionCount != 1 {
+			t.Fatalf("unexpected receipt for the winning import: %+v", winner)
+		}
+
+		path := paths[loser]
+		var updated struct {
+			Code    string `json:"code"`
+			Context struct {
+				Preview previewResponse `json:"preview"`
+			} `json:"context"`
+		}
+		readResponse(t, responses[loser], http.StatusConflict, &updated)
+		if updated.Code != "import_conflicts_changed" || updated.Context.Preview.Status != "pending" ||
+			path != "/api/imports/"+updated.Context.Preview.ID || len(updated.Context.Preview.Conflicts) != 1 {
+			t.Fatalf("stale request did not receive a new review: %+v", updated)
+		}
+		conflict := updated.Context.Preview.Conflicts[0]
+		if !slices.Equal(conflict.Fields, []string{"amount", "currency", "transaction_date", "payment_reference"}) {
+			t.Fatalf("unexpected changed fields: %+v", conflict)
+		}
+
+		var current previewResponse
+		readResponse(t, request(http.MethodGet, path, session.Token, "", nil), http.StatusOK, &current)
+		if len(current.Conflicts) != 1 || current.Conflicts[0].ID != conflict.ID || current.Conflicts[0].Stored.TransactionID != conflict.Stored.TransactionID {
+			t.Fatalf("the reviewed preview was not durably refreshed: %+v", current)
+		}
+		submit := func(id string) *httptest.ResponseRecorder {
+			return request(http.MethodPost, path+"/confirm", session.Token, "application/json",
+				strings.NewReader(fmt.Sprintf(`{"keep_original_conflict_ids":[%q]}`, id)))
+		}
+		readResponse(t, submit("stale-review"), http.StatusConflict, &updated)
+		if updated.Code != "import_conflicts_require_review" {
+			t.Fatalf("stale acknowledgement was not rejected: %+v", updated)
+		}
+
+		var receipt previewResponse
+		readResponse(t, submit(conflict.ID), http.StatusOK, &receipt)
+		if receipt.ID != current.ID || receipt.Decision != "keep_original" || receipt.TransactionCount == nil || *receipt.TransactionCount != 0 ||
+			len(receipt.Conflicts) != 1 || receipt.Conflicts[0].Stored.TransactionID != conflict.Stored.TransactionID {
+			t.Fatalf("confirmation did not preserve the winning transaction: %+v", receipt)
+		}
+	})
+
+	t.Run("collapses identical normalized reference rows and preserves the stored description", func(t *testing.T) {
+		conflictingCSV := csvHeader + "ERP-NEW,PAY-NEW,2026-11-16,1,BRL,Original description\n" +
+			"ERP-NEW,PAY-NEW,2026-11-16,1.00,BRL,Conflicting description\n"
+		var invalid httpapi.Problem
+		readResponse(t, upload(session.Token, sourceID, accountID, start, end, conflictingCSV), http.StatusUnprocessableEntity, &invalid)
+		if invalid.Code != "invalid_csv" || !slices.Equal(invalid.Issues, []httpapi.Issue{
+			{Line: 2, Field: "source_reference", Reason: "conflicting_source_reference"},
+			{Line: 3, Field: "source_reference", Reason: "conflicting_source_reference"},
+		}) {
+			t.Fatalf("unexpected duplicate reference diagnostics: %+v", invalid)
+		}
+		stageAndConfirm := func(csv string, expected int) {
+			t.Helper()
+			var staged, receipt previewResponse
+			readResponse(t, upload(session.Token, sourceID, accountID, start, end, csv), http.StatusCreated, &staged)
+			if len(staged.Conflicts) != 0 {
+				t.Fatalf("unexpected conflicts: %+v", staged.Conflicts)
+			}
+			readResponse(t, request(http.MethodPost, "/api/imports/"+staged.ID+"/confirm", session.Token, "", nil), http.StatusOK, &receipt)
+			if receipt.TransactionCount == nil || *receipt.TransactionCount != expected || receipt.Decision != "" {
+				t.Fatalf("unexpected replay result: %+v", receipt)
+			}
+		}
+		stageAndConfirm(csvHeader+"ERP-NEW,PAY-NEW,2026-11-16,1,BRL,Original description\n"+
+			" ERP-NEW , PAY-NEW ,2026-11-16,+01.00,brl,Original description\n", 1)
+		stageAndConfirm(csvHeader+"ERP-NEW,PAY-NEW,2026-11-16,1.00,BRL,Changed description\n", 0)
+
+		var probe previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, start, end,
+			csvHeader+"ERP-NEW,PAY-NEW,2026-11-16,2.00,BRL,Changed description\n"), http.StatusCreated, &probe)
+		if len(probe.Conflicts) != 1 || probe.Conflicts[0].Stored.Description != "Original description" {
+			t.Fatalf("description-only replay changed the original: %+v", probe.Conflicts)
 		}
 	})
 
@@ -522,6 +793,7 @@ func TestCSVImportPreview(t *testing.T) {
 		readResponse(t, upload("", sourceID, accountID, start, end, csv), http.StatusUnauthorized, &problem)
 		readResponse(t, request(http.MethodGet, "/api/imports/"+uuid.New().String(), "", "", nil), http.StatusUnauthorized, &problem)
 		readResponse(t, request(http.MethodPost, "/api/imports/"+uuid.New().String()+"/confirm", "", "", nil), http.StatusUnauthorized, &problem)
+		readResponse(t, request(http.MethodPost, "/api/imports/"+uuid.New().String()+"/cancel", "", "", nil), http.StatusUnauthorized, &problem)
 		readResponse(t, request(http.MethodGet, "/api/jobs/1", "", "", nil), http.StatusUnauthorized, &problem)
 		readResponse(t, request(http.MethodGet, "/api/reconciliations", "", "", nil), http.StatusUnauthorized, &problem)
 		readResponse(t, request(http.MethodGet, "/api/reconciliations/"+uuid.New().String(), "", "", nil), http.StatusUnauthorized, &problem)
