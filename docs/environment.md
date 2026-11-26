@@ -18,9 +18,11 @@ The Compose database uses `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD
 
 The Compose API and migration step both use `DATABASE_URL` when configured. With the default URL, both connect to the `postgres` service using the configured database, role, and password. The migration step applies the application and River queue migrations to its connection target before the API starts.
 
+In both modes, Compose publishes PostgreSQL on a dynamically assigned port on `127.0.0.1`. `mise run reconciliation:dev` waits for PostgreSQL and combines its published port with the backend's PostgreSQL initialization settings to connect from the host. The task uses that connection for the current checkout's Go migration command and API, even when `DATABASE_URL` is set for Compose. With the default Compose connection, switching modes on the same engine and project reuses the same named volume.
+
 ## Frontend origins
 
-`BACKEND_API_ORIGIN` is the Go API URL used by the Next.js server. It defaults to `http://backend:8080` under Compose, including when the API is published on a custom host port.
+`BACKEND_API_ORIGIN` is the Go API URL used by the Next.js server. It defaults to `http://backend:8080` under Compose, including when the API is published on a custom host port. With `mise run analyst-web:dev`, it defaults to `http://localhost:<RECONCILIATION_API_PORT>`. An explicit value in `apps/analyst-web/.env` applies in both modes.
 
 `WEB_ORIGIN` is the address used by the browser. It defaults to `http://localhost` on the configured `ANALYST_WEB_PORT`. Set it to the browser-facing scheme, hostname, and port when opening the app from another origin, such as `http://127.0.0.1:3001`. The frontend checks that browser login and other writes originate at that address.
 
