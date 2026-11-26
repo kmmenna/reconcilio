@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 
+import { LanguageControl } from "@/components/language/language-control";
 import { readProfile, sessionCookie } from "@/lib/auth";
 import { SignOutButton } from "./sign-out-button";
 
@@ -10,27 +12,33 @@ export default async function WorkspacePage() {
 
   const profile = await readProfile(token).catch(() => undefined);
   if (profile === null) redirect("/login");
-  if (!profile) {
-    return (
-      <main className="workspace">
-        <h1>Workspace unavailable</h1>
-        <p role="alert">Your session could not be verified. Reload the page to try again.</p>
-      </main>
-    );
-  }
 
+  const t = await getTranslations("Workspace");
   return (
     <>
-      <header className="workspace-header">
+      <header className="flex min-h-[4.75rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-[max(1.3rem,5vw)] py-3">
         <span className="wordmark">Reconcilio</span>
-        <SignOutButton />
+        <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-2 desktop:gap-x-4">
+          <LanguageControl />
+          {profile && <SignOutButton />}
+        </div>
       </header>
       <main className="workspace">
-        <h1>Reconciliation workspace</h1>
-        <dl className="session-details">
-          <div><dt>Signed in as</dt><dd>{profile.display_name}</dd></div>
-          <div><dt>Username</dt><dd>{profile.username}</dd></div>
-        </dl>
+        <h1 className="page-title">{profile ? t("title") : t("unavailable")}</h1>
+        {profile ? (
+          <dl className="mt-8 grid max-w-xl grid-cols-2 gap-5 border-y border-border py-5">
+            <div className="min-w-0">
+              <dt className="text-sm text-muted-foreground">{t("signedInAs")}</dt>
+              <dd className="mt-1 font-semibold wrap-anywhere">{profile.display_name}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-sm text-muted-foreground">{t("username")}</dt>
+              <dd className="mt-1 font-semibold wrap-anywhere">{profile.username}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="mt-6 text-destructive" role="alert">{t("sessionUnavailable")}</p>
+        )}
       </main>
     </>
   );

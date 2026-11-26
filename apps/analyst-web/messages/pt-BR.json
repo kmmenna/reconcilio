@@ -1,0 +1,38 @@
+{
+  "Metadata": {
+    "description": "Área de conciliação de transações"
+  },
+  "Language": {
+    "label": "Idioma",
+    "automatic": "Automático"
+  },
+  "SignIn": {
+    "purpose": "Concilie transações",
+    "summary": "Compare registros internos com movimentações bancárias e de cartão.",
+    "title": "Entrar",
+    "description": "Use sua conta local para acessar a área de conciliação.",
+    "username": "Nome de usuário",
+    "password": "Senha",
+    "submit": "Entrar",
+    "pending": "Entrando…"
+  },
+  "Workspace": {
+    "title": "Área de conciliação",
+    "unavailable": "Área de conciliação indisponível",
+    "sessionUnavailable": "Não foi possível verificar sua sessão. Recarregue a página para tentar novamente.",
+    "signedInAs": "Sessão iniciada como",
+    "username": "Nome de usuário",
+    "signOut": "Sair",
+    "signingOut": "Saindo…"
+  },
+  "Errors": {
+    "invalid_origin": "Faça esta solicitação na área de trabalho do Reconcilio.",
+    "invalid_content_type": "Recarregue a página e tente novamente.",
+    "invalid_sign_in": "Informe um nome de usuário e uma senha válidos.",
+    "invalid_credentials": "O nome de usuário ou a senha está incorreto.",
+    "sign_in_unavailable": "O acesso está temporariamente indisponível. Tente novamente em instantes.",
+    "sign_out_unavailable": "Não foi possível sair. Tente novamente.",
+    "invalid_language": "Escolha um dos idiomas disponíveis.",
+    "language_unavailable": "Não foi possível alterar o idioma. Tente novamente."
+  }
+}
