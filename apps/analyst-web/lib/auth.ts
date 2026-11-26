@@ -32,7 +32,7 @@ export async function requestAPI(path: string, init: RequestInit = {}) {
   const upstream = new Headers(init.headers);
   upstream.set(requestIDHeader, incoming.get(requestIDHeader) ?? crypto.randomUUID());
   upstream.set(correlationIDHeader, incoming.get(correlationIDHeader) ?? crypto.randomUUID());
-  const apiOrigin = process.env.GO_API_ORIGIN ?? "http://localhost:8080";
+  const apiOrigin = process.env.BACKEND_API_ORIGIN ?? "http://localhost:8080";
   return fetch(new URL(path, apiOrigin), {
     ...init,
     headers: upstream,
