@@ -421,7 +421,7 @@ func waitForJob(t *testing.T, handler http.Handler, token string, id int64, stat
 	}
 }
 
-func jobTestAPI(t *testing.T) (*pgxpool.Pool, http.Handler, string) {
+func jobTestAPI(t *testing.T) (*pgxpool.Pool, *http.ServeMux, string) {
 	t.Helper()
 	ctx := t.Context()
 	database, err := postgres.Run(ctx, "postgres:18.6", postgres.BasicWaitStrategies())

@@ -14,6 +14,7 @@ import (
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/telemetry"
 )
 
 var errImportResolved = errors.New("import has already been resolved")
@@ -39,6 +40,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 		if record.Status != "pending" {
 			if (cancel && record.Status == "canceled") || (!cancel && record.Status == "confirmed") {
 				receipt, err = readReceipt(record.Receipt)
+				receipt.replayed = true
 				return err
 			}
 			return errImportResolved
@@ -83,6 +85,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			if err != nil {
 				return err
 			}
+			receipt.replayed = true
 			return queries.ResolveImportReplay(ctx, ingestiondb.ResolveImportReplayParams{ID: id, OriginalID: replay.ID})
 		}
 
@@ -111,7 +114,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			return err
 		}
 		for _, assessment := range assessments {
-			jobID, err := s.jobs.EnqueueTx(ctx, tx, assessment.id)
+			jobID, err := s.jobs.EnqueueTx(telemetry.WithImport(ctx, id.String()), tx, assessment.id)
 			if err != nil {
 				return err
 			}

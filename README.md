@@ -44,6 +44,25 @@ The Matching Engine can run the full demo on its own. To enable bilingual propos
 
 Each evaluation sends only the redacted descriptions for a complete group. The worker makes one attempt with a 15-second timeout. The default limits are five attempts per job and 50 per UTC day, including failed calls. Set `RECONCILIO_AI_PER_JOB_LIMIT` and `RECONCILIO_AI_DAILY_LIMIT` to override them. Both explanations are stored with one order and score, so the language selector can switch between them immediately.
 
+## Console telemetry
+
+The API and River worker emit JSON logs to stdout. Set `RECONCILIO_TRACE_STDOUT=true` and `RECONCILIO_METRIC_STDOUT=true` independently to export spans and metrics to the same console. Metrics are collected every 10 seconds.
+
+To observe engine fallback locally, configure the ranking client with a test key and an endpoint that refuses connections inside the backend container.
+
+```sh
+RECONCILIO_TRACE_STDOUT=true RECONCILIO_METRIC_STDOUT=true \
+  OPENAI_API_KEY=demo-only OPENAI_MODEL=demo-ranking \
+  OPENAI_RESPONSES_URL=http://127.0.0.1:1/v1/responses \
+  docker compose up --build -d --wait
+docker compose exec backend reconcilio bootstrap-admin
+docker compose logs --no-log-prefix -f backend
+```
+
+On a fresh demo database, preview and confirm the internal CSV, wait for its job to finish, then repeat for the external CSV. Find `HTTP request`, `Import operation`, and `Reconciliation job` records with the same `correlation_id`. The worker has the confirmation's `request_id`, the `import_id`, and the receipt's `job_id`. The external job emits `AI ranking` with `attempted: true` and `fallback_reason: provider_error` and still completes. Wait for a metric export and check `reconcilio.business.*` for seven imported Transactions, one automatic confirmation, and two internal and three external open Transactions. Replay the same CSV to verify the persisted totals stay the same. In a split deployment, each exporter reads the same database-wide business totals.
+
+For live provider spend, select the OpenAI API project that owns the key. Open **Analytics → Spend**, choose the UTC date range, and filter by API key or model as needed. Recent calls can take time to appear. [OpenAI Spend dashboard help](https://help.openai.com/en/articles/10478918-reviewing-api-usage-and-costs#review-spend)
+
 ## Development
 
 Install the pinned tools with mise and install the web dependencies. The Go integration test requires a Docker-compatible container runtime for Testcontainers.

@@ -28,7 +28,14 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await page.getByLabel("Start date").fill("11/16/2026");
     await page.getByLabel("End date").fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(resolve(__dirname, "../../../examples/demo", fixture));
+    const previewRequest = page.waitForResponse(response => response.url() === `${origin}/api/imports` && response.request().method() === "POST");
     await page.getByRole("button", { name: "Preview CSV" }).click();
+    const staged = await previewRequest;
+    const stagedHeaders = await staged.request().allHeaders();
+    const workflow = stagedHeaders["x-correlation-id"];
+    expect(workflow).toMatch(/^[0-9a-f-]{36}$/);
+    expect(stagedHeaders["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(staged.headers()["x-request-id"]).toBe(stagedHeaders["x-request-id"]);
     await expect(page.getByRole("heading", { name: "Import preview" })).toBeVisible();
     const previewURL = page.url();
     const id = new URL(previewURL).pathname.split("/").at(-1);
@@ -37,7 +44,14 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     });
     expect(crossOrigin.status()).toBe(403);
 
+    const confirmRequest = page.waitForResponse(response => response.url() === `${origin}/api/imports/${id}/confirm` && response.ok());
     await page.getByRole("button", { name: "Confirm import" }).click();
+    const confirmation = await confirmRequest;
+    const confirmHeaders = await confirmation.request().allHeaders();
+    expect(confirmHeaders["x-correlation-id"]).toBe(workflow);
+    expect(confirmation.headers()["x-correlation-id"]).toBe(workflow);
+    expect(confirmation.headers()["x-request-id"]).toBe(confirmHeaders["x-request-id"]);
+    expect(confirmHeaders["x-request-id"]).not.toBe(stagedHeaders["x-request-id"]);
     await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
     await expect(page.getByText(`${count} transactions imported`, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(previewURL);
@@ -112,7 +126,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(amountComparison.getByRole("cell", { name: "-R$89.90", exact: true })).toBeVisible();
   await expect(amountComparison.getByRole("cell", { name: "-R$94.90", exact: true })).toBeVisible();
   const conflictURL = page.url();
-  const cancelPath = conflictURL.replace("/workspace/", "/api/") + "/cancel";
+  const cancelPath = `${origin}${new URL(conflictURL).pathname.replace("/workspace/", "/api/")}/cancel`;
   const crossOriginCancel = await page.request.post(cancelPath, { headers: { Origin: "https://example.invalid" } });
   expect(crossOriginCancel.status()).toBe(403);
 
@@ -143,7 +157,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   const receiptURL = page.url();
   await uploadReimport(conflictFixture);
   await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
-  await expect(page).toHaveURL(receiptURL);
+  await expect(page).toHaveURL(url => url.pathname === new URL(receiptURL).pathname);
 
   await page.goto(detailURL);
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();

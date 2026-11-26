@@ -32,6 +32,7 @@ type previewRow struct {
 }
 
 type importView struct {
+	replayed          bool
 	ID                string                     `json:"id" format:"uuid"`
 	Status            string                     `json:"status"`
 	Source            catalog.Source             `json:"source"`
@@ -85,6 +86,7 @@ func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePend
 		}
 		if replay.ID.Valid {
 			view, err = readReceipt(replay.Receipt)
+			view.replayed = true
 			return err
 		}
 		source, err := catalog.LockSourceForImport(ctx, tx, params.SourceID)

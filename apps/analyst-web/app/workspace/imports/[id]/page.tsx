@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { Button } from "@/components/ui/button";
+import { readWorkflowID } from "@/lib/auth";
+import { workflowURL } from "@/lib/correlation";
 import type { ImportView } from "@/lib/imports";
 import { formatMoney, formatTimestamp, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -12,10 +14,11 @@ import { ImportConflicts } from "./import-conflicts";
 export default async function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const token = await getWorkspaceToken();
-  const [preview, t, locale] = await Promise.all([
+  const [preview, t, locale, workflow] = await Promise.all([
     readWorkspaceResource<ImportView>(`/api/imports/${encodeURIComponent(id)}`, token),
     getTranslations("Imports"),
     getLocale(),
+    readWorkflowID(),
   ]);
   const confirmed = preview?.status === "confirmed";
   const canceled = preview?.status === "canceled";
@@ -85,7 +88,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
             </dl>
           </div>
 
-          {isPending && <ConfirmImport key={preview.id} id={preview.id} accounts={accounts} initialConflicts={preview.conflicts ?? []} />}
+          {isPending && <ConfirmImport key={preview.id} id={preview.id} accounts={accounts} workflow={workflow} initialConflicts={preview.conflicts ?? []} />}
           {!isPending && preview.conflicts?.length ? (
             <section className="mt-8" aria-labelledby="recorded-decision">
               <h2 className="text-lg font-semibold" id="recorded-decision">{t("recordedDecision")}</h2>
@@ -102,7 +105,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                   <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3" key={job.job_id}>
                     <span className="font-semibold wrap-anywhere">{job.financial_account.name}</span>
                     <Button asChild variant="outline" className="h-11">
-                      <Link href={`/workspace/jobs/${job.job_id}`}>{t("viewJob")}</Link>
+                      <Link href={workflowURL(`/workspace/jobs/${job.job_id}`, workflow)}>{t("viewJob")}</Link>
                     </Button>
                   </li>
                 ))}

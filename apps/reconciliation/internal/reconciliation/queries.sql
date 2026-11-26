@@ -349,3 +349,13 @@ INSERT INTO ranking_job_usage (job_id, call_count)
 SELECT sqlc.arg(job_id)::bigint, 1 WHERE sqlc.arg(job_limit)::integer > 0
 ON CONFLICT (job_id) DO UPDATE SET call_count = ranking_job_usage.call_count + 1
 WHERE ranking_job_usage.call_count < sqlc.arg(job_limit);
+
+-- name: ObserveBusinessCounts :one
+SELECT count(*) AS imported,
+       (SELECT count(*) FROM reconciliations WHERE method = 'automatic') AS automatic,
+       (SELECT count(*) FROM reconciliations WHERE method = 'manual') AS manual,
+       (SELECT count(*) FROM match_proposals WHERE status = 'rejected') AS rejected,
+       count(*) FILTER (WHERE m.transaction_id IS NULL AND t.source_side = 'internal') AS open_internal,
+       count(*) FILTER (WHERE m.transaction_id IS NULL AND t.source_side = 'external') AS open_external
+FROM transactions AS t
+LEFT JOIN reconciliation_members AS m ON m.transaction_id = t.id AND m.released_at IS NULL;

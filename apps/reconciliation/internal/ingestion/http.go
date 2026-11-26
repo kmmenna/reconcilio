@@ -16,6 +16,8 @@ import (
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/identity"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type importForm struct {
@@ -69,7 +71,9 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		Security:           bearer,
 		MaxBodyBytes:       1024 * 1024,
 		SkipValidateParams: true, // Report invalid selections with stable, field-specific reasons.
-	}, func(ctx context.Context, in *createPreviewInput) (*previewOutput, error) {
+	}, func(ctx context.Context, in *createPreviewInput) (out *previewOutput, err error) {
+		ctx, finish := startImport(ctx, "preview", "")
+		defer func() { finish(out, err) }()
 		form := in.RawBody.Data()
 		if form.File.File != nil {
 			defer form.File.Close()
@@ -95,6 +99,7 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		if err != nil {
 			return nil, previewNotFound()
 		}
+		telemetry.SetSpanAttributes(ctx, attribute.String("import_id", id.String()))
 		staged, err := s.getPreview(ctx, pgtype.UUID{Bytes: id, Valid: true})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, previewNotFound()
@@ -112,7 +117,9 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		Summary:       "Regenerate an import preview from retained CSV rows",
 		Errors:        []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
 		Security:      bearer,
-	}, func(ctx context.Context, in *getPreviewInput) (*previewOutput, error) {
+	}, func(ctx context.Context, in *getPreviewInput) (out *previewOutput, err error) {
+		ctx, finish := startImport(ctx, "refresh_preview", in.ID)
+		defer func() { finish(out, err) }()
 		analystID, err := identities.RequireUser(ctx, in.Authorization)
 		if err != nil {
 			return nil, err
@@ -161,7 +168,13 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 	})
 }
 
-func (s *Service) resolveImport(ctx context.Context, identities *identity.Service, idValue, authorization string, cancel bool, keepIDs []string) (*previewOutput, error) {
+func (s *Service) resolveImport(ctx context.Context, identities *identity.Service, idValue, authorization string, cancel bool, keepIDs []string) (out *previewOutput, err error) {
+	operation := "confirm"
+	if cancel {
+		operation = "cancel"
+	}
+	ctx, finish := startImport(ctx, operation, idValue)
+	defer func() { finish(out, err) }()
 	analystID, err := identities.RequireUser(ctx, authorization)
 	if err != nil {
 		return nil, err
@@ -228,6 +241,7 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *i
 			if err != nil {
 				return nil, previewUnavailable(ctx, err)
 			}
+			receipt.replayed = true
 			return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: receipt}, nil
 		}
 	} else {

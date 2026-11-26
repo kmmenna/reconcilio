@@ -76,6 +76,7 @@ type RankingEvent struct {
 	Model          string
 	Attempted      bool
 	Duration       time.Duration
+	StartedAt      time.Time
 	Usage          *RankingUsage
 	FallbackReason string
 }
@@ -187,12 +188,12 @@ func (s *Service) evaluateRanking(ctx context.Context, attempt *AccountAttempt, 
 	}
 
 	event.Attempted = true
-	started := time.Now()
+	event.StartedAt = time.Now()
 	providerCtx, cancel := context.WithTimeout(ctx, timeout)
 	result, err := s.ranking.Ranker.Rank(providerCtx, input)
 	contextErr := providerCtx.Err()
 	cancel()
-	event.Duration = time.Since(started)
+	event.Duration = time.Since(event.StartedAt)
 	event.Model = cmp.Or(result.Model, event.Model)
 	event.Usage = result.Usage
 

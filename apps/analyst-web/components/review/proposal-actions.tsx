@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import { usePathname, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createContext, type ReactNode, useContext, useRef, useState, useTransition } from "react";
@@ -32,7 +33,7 @@ export function ReviewDecisions({ children }: { children: ReactNode }) {
     const detailPath = `/workspace/match-proposals/${id}`;
 
     try {
-      const response = await fetch(`/api/match-proposals/${id}/${action}`, {
+      const response = await correlatedFetch(`/api/match-proposals/${id}/${action}`, {
         method: "POST",
         ...(evaluationId && {
           headers: { "Content-Type": "application/json" },

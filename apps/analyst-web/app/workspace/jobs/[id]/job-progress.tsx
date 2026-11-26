@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -13,7 +14,7 @@ function isFinal(status: ReconciliationJob["status"]) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
-export function JobProgress({ initialJob }: { initialJob: ReconciliationJob }) {
+export function JobProgress({ initialJob, workflow }: { initialJob: ReconciliationJob; workflow: string }) {
   const t = useTranslations("Reconciliation");
   const locale = useLocale();
   const router = useRouter();
@@ -30,7 +31,7 @@ export function JobProgress({ initialJob }: { initialJob: ReconciliationJob }) {
 
     async function poll() {
       try {
-        const response = await fetch(`/api/jobs/${id}`, { signal: abort.signal });
+        const response = await correlatedFetch(`/api/jobs/${id}`, { signal: abort.signal }, workflow);
         if (response.status === 401) {
           router.replace("/login");
           return;
@@ -56,7 +57,7 @@ export function JobProgress({ initialJob }: { initialJob: ReconciliationJob }) {
       abort.abort();
       clearTimeout(timer);
     };
-  }, [finished, id, router]);
+  }, [finished, id, router, workflow]);
 
   return (
     <>

@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useId, useState, useTransition, type FormEvent } from "react";
@@ -107,7 +108,7 @@ function CatalogEditor({ collection, entry, onCancel, onSaved }: {
     setProblem(null);
     try {
       const suffix = entry ? `/${encodeURIComponent(entry.id)}` : "";
-      const response = await fetch(`/api/catalog/${collection}${suffix}`, {
+      const response = await correlatedFetch(`/api/catalog/${collection}${suffix}`, {
         method: entry ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(Object.fromEntries(values)),

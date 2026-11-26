@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch, workflowURL } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
@@ -50,7 +51,8 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
     setPending(true);
     setProblem(null);
     try {
-      const response = await fetch("/api/imports", { method: "POST", body });
+      const workflow = crypto.randomUUID();
+      const response = await correlatedFetch("/api/imports", { method: "POST", body }, workflow);
       if (response.status === 401) {
         router.replace("/login");
         return;
@@ -64,7 +66,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
         return;
       }
       const preview = await response.json() as ImportView;
-      router.push(`/workspace/imports/${encodeURIComponent(preview.id)}`);
+      router.push(workflowURL(`/workspace/imports/${encodeURIComponent(preview.id)}`, workflow));
     } catch {
       setProblem({ code: "preview_unavailable" });
     } finally {

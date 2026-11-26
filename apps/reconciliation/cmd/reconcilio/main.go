@@ -20,29 +20,62 @@ import (
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/identity"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/reconciliation"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/telemetry"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/migrations"
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	os.Exit(commandExitCode())
+}
+
+func commandExitCode() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	traces, traceErr := stdoutEnabled("RECONCILIO_TRACE_STDOUT")
+	metrics, metricErr := stdoutEnabled("RECONCILIO_METRIC_STDOUT")
+	signals, err := telemetry.New(telemetry.Options{Traces: traces, Metrics: metrics})
+	if err != nil {
+		slog.Error("Could not start telemetry", "error", err)
+		return 1
+	}
+	slog.SetDefault(signals.Logger)
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := signals.Shutdown(shutdown); err != nil {
+			fmt.Fprintln(os.Stderr, "Could not shut down telemetry:", err)
+		}
+	}()
+	if err := errors.Join(traceErr, metricErr); err != nil {
+		slog.Error("Invalid telemetry configuration", "setting", err.Error())
+		return 1
+	}
 
 	command := "serve"
 	if len(os.Args) == 2 {
 		command = os.Args[1]
 	}
 	if len(os.Args) > 2 {
-		slog.Error("Expected one command: serve, migrate, or bootstrap-admin")
-		os.Exit(1)
+		slog.Error("Expected one command from serve, migrate, or bootstrap-admin")
+		return 1
 	}
-	if err := run(ctx, command); err != nil {
+	if err := run(ctx, command, signals); err != nil {
 		slog.Error("Reconcilio command failed", "command", command, "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
-func run(ctx context.Context, command string) error {
+func stdoutEnabled(name string) (bool, error) {
+	enabled, err := strconv.ParseBool(cmp.Or(os.Getenv(name), "false"))
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return enabled, nil
+}
+
+func run(ctx context.Context, command string, signals *telemetry.Runtime) error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return errors.New("DATABASE_URL is required")
@@ -59,7 +92,7 @@ func run(ctx context.Context, command string) error {
 	case "bootstrap-admin":
 		return bootstrapAdmin(ctx, pool)
 	case "serve":
-		return serve(ctx, pool)
+		return serve(ctx, pool, signals)
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}
@@ -80,7 +113,7 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func serve(ctx context.Context, pool *pgxpool.Pool) error {
+func serve(ctx context.Context, pool *pgxpool.Pool, signals *telemetry.Runtime) error {
 	apiEnabled, err := componentEnabled("RECONCILIO_API_ENABLED")
 	if err != nil {
 		return err
@@ -95,10 +128,22 @@ func serve(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
+	stopMetrics, err := signals.ObserveBusinessMetrics(pool)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := errors.Join(signals.FlushMetrics(flush), stopMetrics()); err != nil {
+			slog.Warn("Could not flush business metrics", "error", err)
+		}
+	}()
 	ranking, err := configureRanking()
 	if err != nil {
 		return err
 	}
+	ranking.Observe = rankingObserver(signals)
 	reconciler := reconciliation.NewWithRanking(pool, ranking)
 	queue, err := reconciliation.NewQueue(pool, reconciler, workerEnabled)
 	if err != nil {
@@ -107,14 +152,14 @@ func serve(ctx context.Context, pool *pgxpool.Pool) error {
 
 	var server *http.Server
 	if apiEnabled {
-		server, err = configureHTTP(pool, reconciler, queue)
+		server, err = configureHTTP(pool, reconciler, queue, signals)
 		if err != nil {
 			return err
 		}
 	}
 	if workerEnabled {
 		workerContext, stopWorker := context.WithCancel(ctx)
-		if err := startWorker(workerContext, queue); err != nil {
+		if err := startWorker(signals.Context(workerContext), queue); err != nil {
 			stopWorker()
 			return err
 		}
@@ -146,7 +191,7 @@ func startWorker(ctx context.Context, queue *reconciliation.Queue) error {
 	return nil
 }
 
-func configureHTTP(pool *pgxpool.Pool, reconciler *reconciliation.Service, queue *reconciliation.Queue) (*http.Server, error) {
+func configureHTTP(pool *pgxpool.Pool, reconciler *reconciliation.Service, queue *reconciliation.Queue, signals *telemetry.Runtime) (*http.Server, error) {
 	key := []byte(os.Getenv("JWT_SECRET"))
 	if len(key) == 0 {
 		key = make([]byte, 32)
@@ -156,7 +201,7 @@ func configureHTTP(pool *pgxpool.Pool, reconciler *reconciliation.Service, queue
 	}
 	return &http.Server{
 		Addr:              cmp.Or(os.Getenv("HTTP_ADDR"), ":8080"),
-		Handler:           newHandler(pool, key, reconciler, queue),
+		Handler:           signals.HTTP(newHandler(pool, key, reconciler, queue)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}, nil
 }
@@ -178,7 +223,7 @@ func serveHTTP(ctx context.Context, server *http.Server) error {
 	}
 }
 
-func newHandler(pool *pgxpool.Pool, key []byte, reconciler *reconciliation.Service, queue *reconciliation.Queue) http.Handler {
+func newHandler(pool *pgxpool.Pool, key []byte, reconciler *reconciliation.Service, queue *reconciliation.Queue) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

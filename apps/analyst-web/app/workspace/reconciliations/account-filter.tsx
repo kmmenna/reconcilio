@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch, workflowURL } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
@@ -23,7 +24,8 @@ export function AccountFilter({ accounts, initialAccount }: { accounts: Financia
     setSending(true);
     setProblem(null);
     try {
-      const response = await fetch(`/api/financial-accounts/${encodeURIComponent(account)}/reprocess`, { method: "POST" });
+      const workflow = crypto.randomUUID();
+      const response = await correlatedFetch(`/api/financial-accounts/${encodeURIComponent(account)}/reprocess`, { method: "POST" }, workflow);
       if (response.status === 401) {
         startNavigation(() => router.replace("/login"));
         return;
@@ -34,7 +36,7 @@ export function AccountFilter({ accounts, initialAccount }: { accounts: Financia
       }
       if (!response.ok) throw new Error("The reprocessing request failed.");
       const { job_id: jobID } = await response.json() as { job_id: number };
-      startNavigation(() => router.push(`/workspace/jobs/${jobID}`));
+      startNavigation(() => router.push(workflowURL(`/workspace/jobs/${jobID}`, workflow)));
     } catch {
       setProblem("unavailable");
     } finally {
