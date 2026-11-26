@@ -10,7 +10,7 @@ import { readProblemCode, useProblemMessage } from "@/lib/problem-message";
 type Decision = "confirm" | "reject";
 
 const DecisionContext = createContext<{
-  decide: (id: string, action: Decision) => void;
+  decide: (id: string, action: Decision, evaluationId?: string) => void;
   submitting: string | null;
   navigating: boolean;
 } | null>(null);
@@ -24,7 +24,7 @@ export function ReviewDecisions({ children }: { children: ReactNode }) {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const error = useProblemMessage(errorCode, "review_unavailable");
 
-  async function decide(id: string, action: Decision) {
+  async function decide(id: string, action: Decision, evaluationId?: string) {
     if (active.current || navigating) return;
     active.current = true;
     setSubmitting(id);
@@ -32,7 +32,13 @@ export function ReviewDecisions({ children }: { children: ReactNode }) {
     const detailPath = `/workspace/match-proposals/${id}`;
 
     try {
-      const response = await fetch(`/api/match-proposals/${id}/${action}`, { method: "POST" });
+      const response = await fetch(`/api/match-proposals/${id}/${action}`, {
+        method: "POST",
+        ...(evaluationId && {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ranking_evaluation_id: evaluationId }),
+        }),
+      });
       if (response.ok) {
         startNavigation(() => {
           if (pathname !== detailPath) router.push(detailPath);
@@ -62,7 +68,7 @@ export function ReviewDecisions({ children }: { children: ReactNode }) {
   );
 }
 
-export function ProposalActions({ id }: { id: string }) {
+export function ProposalActions({ id, evaluationId }: { id: string; evaluationId?: string }) {
   const t = useTranslations("Review");
   const state = useContext(DecisionContext);
   if (!state) throw new Error("ProposalActions must be rendered inside ReviewDecisions.");
@@ -70,10 +76,10 @@ export function ProposalActions({ id }: { id: string }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button type="button" className="min-h-11" disabled={busy} onClick={() => state.decide(id, "confirm")}>
+      <Button type="button" className="min-h-11" disabled={busy} onClick={() => state.decide(id, "confirm", evaluationId)}>
         {t("confirm")}
       </Button>
-      <Button type="button" variant="outline" className="min-h-11" disabled={busy} onClick={() => state.decide(id, "reject")}>
+      <Button type="button" variant="outline" className="min-h-11" disabled={busy} onClick={() => state.decide(id, "reject", evaluationId)}>
         {t("reject")}
       </Button>
       {state.submitting === id && <span className="text-sm text-muted-foreground" role="status">{t("saving")}</span>}

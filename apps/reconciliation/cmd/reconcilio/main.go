@@ -95,7 +95,11 @@ func serve(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
-	reconciler := reconciliation.New(pool)
+	ranking, err := configureRanking()
+	if err != nil {
+		return err
+	}
+	reconciler := reconciliation.NewWithRanking(pool, ranking)
 	queue, err := reconciliation.NewQueue(pool, reconciler, workerEnabled)
 	if err != nil {
 		return err

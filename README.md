@@ -38,6 +38,12 @@ podman --runtime runc system service --time=0 "unix://$XDG_RUNTIME_DIR/reconcili
 
 Point `DOCKER_HOST` at `unix://$XDG_RUNTIME_DIR/reconcilio-podman.sock` in the terminal running Compose. Set `TESTCONTAINERS_RYUK_DISABLED=true` for the Go tests if rootless Podman prevents the Testcontainers cleanup service from starting. The test removes its PostgreSQL container on completion.
 
+## Optional AI ranking
+
+The Matching Engine can run the full demo on its own. To enable bilingual proposal ranking, set `OPENAI_API_KEY` and `OPENAI_MODEL` in the backend environment before starting Compose. Choose an OpenAI model that supports the Responses API and Structured Outputs, such as `gpt-5.4-mini` if your project has access. Then import the Corporate Card demo files and open **Review queue**. For an existing import, use **Reprocess account** on its Financial Account. The worker reuses any assessment that already covers the current group.
+
+Each evaluation sends only the redacted descriptions for a complete group. The worker makes one attempt with a 15-second timeout. The default limits are five attempts per job and 50 per UTC day, including failed calls. Set `RECONCILIO_AI_PER_JOB_LIMIT` and `RECONCILIO_AI_DAILY_LIMIT` to override them. Both explanations are stored with one order and score, so the language selector can switch between them immediately.
+
 ## Development
 
 Install the pinned tools with mise and install the web dependencies. The Go integration test requires a Docker-compatible container runtime for Testcontainers.
@@ -57,4 +63,7 @@ For the browser smoke test, install Playwright Chromium and run the smoke task. 
 ```sh
 mise run browser:install
 mise run smoke
+RECONCILIO_SMOKE_RANKING=true mise run smoke
 ```
+
+The second command checks ranked review and decision history with a local test provider.

@@ -24,6 +24,7 @@ export type ReconciliationDetail = Reconciliation & {
   actor: DecisionActor;
   match_proposal_id?: string;
   proposal_evidence?: ProposalEvidence;
+  ranking_assessment?: RankingAssessment;
   members: Transaction[];
   evidence?: {
     payment_reference: string;
@@ -63,6 +64,13 @@ export type ProposalEvidence = {
   currency: string;
 };
 
+export type RankingAssessment = {
+  evaluation_id: string;
+  rank: number;
+  score: number;
+  explanations: Record<"pt-BR" | "en", string>;
+};
+
 export type ProposalResolution = {
   status: "pending" | "accepted" | "rejected" | "invalidated";
   resolved_at?: string;
@@ -74,6 +82,7 @@ export type MatchProposal = ProposalResolution & {
   id: string;
   external_transaction: Transaction;
   evidence: ProposalEvidence;
+  ranking_assessment?: RankingAssessment;
   created_at: string;
 };
 
@@ -82,5 +91,5 @@ export type ReviewTransaction = {
   internal_transaction: Transaction;
 };
 export type ReviewQueueEntry = ReviewTransaction & { pending_count: number };
-export type ReviewGroup = ReviewTransaction & { proposals: MatchProposal[] };
+export type ReviewGroup = ReviewTransaction & { proposals: MatchProposal[]; ranking_evaluation_id?: string };
 export type MatchProposalDetail = ReviewTransaction & MatchProposal;

@@ -236,47 +236,53 @@ func importJobTestTransactions(t *testing.T, pool *pgxpool.Pool, handler http.Ha
 		if err != nil {
 			t.Fatal(err)
 		}
-		body := new(bytes.Buffer)
-		form := multipart.NewWriter(body)
-		for name, value := range map[string]string{
-			"source_id": source.ID, "financial_account_id": account, "period_start": "2026-11-16", "period_end": "2026-11-22",
-		} {
-			if err := form.WriteField(name, value); err != nil {
-				t.Fatal(err)
-			}
-		}
-		file, err := form.CreateFormFile("file", "statement.csv")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := io.Copy(file, bytes.NewReader(data)); err != nil {
-			t.Fatal(err)
-		}
-		if err := form.Close(); err != nil {
-			t.Fatal(err)
-		}
-		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/imports", body)
-		req.Header.Set("Content-Type", form.FormDataContentType())
-		req.Header.Set("Authorization", "Bearer "+token)
-		res := httptest.NewRecorder()
-		handler.ServeHTTP(res, req)
-		var preview previewResponse
-		readResponse(t, res, http.StatusCreated, &preview)
-		var receipt struct {
-			Jobs []struct {
-				ID int64 `json:"job_id"`
-			} `json:"jobs"`
-		}
-		readResponse(t, jobRequest(t, handler, http.MethodPost, "/api/imports/"+preview.ID+"/confirm", token, ""),
-			http.StatusOK, &receipt)
-		if len(receipt.Jobs) != 1 {
-			t.Fatalf("expected one queued import job: %+v", receipt)
-		}
+		id := submitJobTestCSV(t, handler, token, account, source.ID, data)
 		// Let the manual reprocessing job be the first to evaluate the confirmed data.
-		if _, err := client.JobCancel(t.Context(), receipt.Jobs[0].ID); err != nil {
+		if _, err := client.JobCancel(t.Context(), id); err != nil {
 			t.Fatal(err)
 		}
 	}
+}
+
+func submitJobTestCSV(t *testing.T, handler http.Handler, token, account, source string, data []byte) int64 {
+	t.Helper()
+	body := new(bytes.Buffer)
+	form := multipart.NewWriter(body)
+	for name, value := range map[string]string{
+		"source_id": source, "financial_account_id": account, "period_start": "2026-11-16", "period_end": "2026-11-22",
+	} {
+		if err := form.WriteField(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := form.CreateFormFile("file", "statement.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(file, bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/imports", body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	var preview previewResponse
+	readResponse(t, res, http.StatusCreated, &preview)
+	var receipt struct {
+		Jobs []struct {
+			ID int64 `json:"job_id"`
+		} `json:"jobs"`
+	}
+	readResponse(t, jobRequest(t, handler, http.MethodPost, "/api/imports/"+preview.ID+"/confirm", token, ""),
+		http.StatusOK, &receipt)
+	if len(receipt.Jobs) != 1 {
+		t.Fatalf("expected one queued import job: %+v", receipt)
+	}
+	return receipt.Jobs[0].ID
 }
 
 func TestJobSummaryRecoversBeforeWorkerStartupAndAfterRiverCleanup(t *testing.T) {

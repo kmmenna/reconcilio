@@ -54,6 +54,7 @@
     "unavailable": "Não foi possível carregar os dados da conta. Recarregue a página e tente novamente."
   },
   "Errors": {
+    "invalid_ranking_evaluation": "Esta avaliação da IA não está disponível para a proposta. Atualize a página e tente novamente.",
     "match_proposal_conflict": "Esta proposta mudou. As alternativas restantes foram atualizadas.",
     "match_proposal_not_found": "A proposta de conciliação não foi encontrada.",
     "invalid_ranking_evaluation": "A avaliação de classificação não abrange esta proposta.",

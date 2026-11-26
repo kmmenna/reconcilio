@@ -27,6 +27,7 @@ type MatchProposal struct {
 	ResolvedBy            pgtype.UUID
 	ResolvedByName        pgtype.Text
 	ReconciliationID      pgtype.UUID
+	RankingEvaluationID   pgtype.UUID
 }
 
 type Reconciliation struct {
