@@ -72,3 +72,12 @@ run = "node scripts/orchestration-env.mjs sh scripts/compose.sh logs"
 [tasks."compose:stop"]
 description = "Stop the worktree's Compose stack and keep PostgreSQL data"
 run = "node scripts/orchestration-env.mjs sh scripts/compose.sh down"
+
+[tasks."reconciliation:dev"]
+description = "Start PostgreSQL, migrate from this checkout, and run the Go API locally"
+run = '''
+exec node scripts/orchestration-env.mjs sh -c '
+  node scripts/compose-env.mjs sh scripts/compose.sh up -d --wait postgres &&
+  exec node scripts/reconciliation-dev.mjs
+'
+'''

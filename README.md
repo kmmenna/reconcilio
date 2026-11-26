@@ -26,6 +26,18 @@ mise run compose:stop
 
 Stopping removes this project's containers and network. Its PostgreSQL volume is reused the next time you start the same project on the same engine.
 
+### Run the Go API on the host
+
+Stop the Compose stack before switching to a host API on the same port. Run the development task from the worktree root.
+
+```sh
+mise run reconciliation:dev
+```
+
+The task starts the worktree's Compose PostgreSQL, waits for it to be ready, and applies the current checkout's application and River queue migrations before the API listens on the configured `RECONCILIATION_API_PORT`. Compose and host development share the PostgreSQL volume when they use the same engine and project with the default Compose connection. The backend's `DATABASE_URL` override applies to the Compose backend and migration step. The development task connects to the project's PostgreSQL service on its automatically assigned loopback port.
+
+Stop the API with Ctrl+C. Run `mise run compose:stop` to stop the database and retain its data.
+
 ### Worktree settings
 
 Mise tasks read these settings from an optional `.env` in the worktree root. A local value takes precedence over an inherited shell value. Compose's automatic loading of the root file is disabled. See [Environment configuration](docs/environment.md) for settings owned by the backend and frontend, including database initialization and origin overrides.
@@ -34,7 +46,7 @@ Mise tasks read these settings from an optional `.env` in the worktree root. A l
 | --- | --- | --- |
 | `CONTAINER_ENGINE` | `docker` | Set to `podman` to select Podman. An empty value selects Docker. |
 | `COMPOSE_PROJECT_NAME` | Worktree directory name | Compose normalizes the default. Set a unique project name when directory names would produce the same project name. |
-| `RECONCILIATION_API_PORT` | `8080` | API port published on `127.0.0.1`. |
+| `RECONCILIATION_API_PORT` | `8080` | API port on `127.0.0.1` in both modes. |
 | `ANALYST_WEB_PORT` | `3000` | Frontend port published on `127.0.0.1`. Its public origin defaults to `http://localhost` on this port. |
 
 To run two worktrees side by side, put a different project name and different host ports in each worktree's root `.env`. For example, the first can use the defaults or specify `COMPOSE_PROJECT_NAME=reconcilio-main`, `RECONCILIATION_API_PORT=8080`, and `ANALYST_WEB_PORT=3000`. In the second, use:
