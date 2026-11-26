@@ -12,7 +12,6 @@ import { csvColumns, type FinancialAccount, type ImportView, type ImportProblem,
 import type importMessages from "@/messages/imports.en.json";
 import { CoverageOverlap } from "./coverage-overlap";
 import { CSVFileField } from "./csv-file-field";
-import { ImportDateField } from "./import-date-field";
 import { ImportIssues } from "./import-issues";
 
 type Field = keyof typeof importMessages.fields;
@@ -120,8 +119,6 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
               required
             />
           </div>
-          <ImportDateField field="period_start" invalid={fieldError("period_start")["aria-invalid"]} />
-          <ImportDateField field="period_end" invalid={fieldError("period_end")["aria-invalid"]} />
         </div>
 
         <div className="space-y-3 border-t border-border pt-5">

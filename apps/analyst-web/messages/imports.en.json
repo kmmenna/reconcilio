@@ -1,15 +1,6 @@
 {
   "title": "Import CSV",
-  "intro": "Select a Source, an account assignment, and the dates covered by the CSV.",
-  "dateFormat": "MM/DD/YYYY",
-  "calendar": {
-    "open": "Open calendar for {field}",
-    "title": "Calendar for {field}",
-    "navigation": "Calendar navigation",
-    "previous": "Previous month",
-    "next": "Next month",
-    "today": "Today, {date}"
-  },
+  "intro": "Select a Source and a Financial Account assignment, then upload a CSV.",
   "chooseSource": "Select a Source",
   "chooseAccount": "Select a Financial Account",
   "uploadHint": "Drag a CSV here or click to choose a file.",
@@ -51,7 +42,8 @@
   "recordedDecision": "Recorded decision",
   "keptSummary": "The original Transactions were kept.",
   "canceledConflictSummary": "The import was canceled with these conflicts.",
-  "coverageDates": "An earlier import for {account} covers {start} through {end}. Choose a file and dates outside that period, or use exports with Source References on every row.",
+  "coverageTitle": "Import Coverage",
+  "coverageDates": "An earlier import for {account} covers {start} through {end}. Upload a file with dates outside that period or use exports with Source References on every row.",
   "fields": {
     "source_id": "Source",
     "source_side": "Side",
@@ -98,7 +90,6 @@
     "invalid_financial_account": "Select a Financial Account.",
     "unknown_financial_account": "This Financial Account is no longer available.",
     "invalid_date": "Use a valid date in YYYY-MM-DD format.",
-    "invalid_form_date": "Enter a valid date in MM/DD/YYYY format.",
     "invalid_period": "Enter an end date on or after the start date.",
     "missing_file": "Choose a CSV file.",
     "invalid_encoding": "Save the file as UTF-8 text.",
@@ -119,7 +110,6 @@
   },
   "useCSVAccountCodes": "Use account codes from CSV",
   "mixedHelp": "Use a registered Financial Account code in the financial_account column on each row.",
-  "multipleAccounts": "Financial Accounts",
   "refreshPreview": "Prepare new preview",
   "refreshingPreview": "Preparing new preview…",
   "previousSide": "Side in preview",

@@ -22,18 +22,17 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   const navigation = page.getByRole("navigation", { name: /^(Workspace navigation|Navegação da área de conciliação)$/ });
   const currentSection = navigation.locator('[aria-current="location"]');
 
-  for (const [source, fixture, count] of [
-    ["Demo ERP", "internal.csv", 3],
-    ["Demo Card Statement", "external.csv", 4],
+  for (const [source, fixture, count, lastDay] of [
+    ["Demo ERP", "internal.csv", 3, "20"],
+    ["Demo Card Statement", "external.csv", 4, "21"],
   ] as const) {
     await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), source);
     await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
-    await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
-    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(resolve(__dirname, "../../../examples/demo", fixture));
     const previewRequest = page.waitForResponse(response => response.url() === `${origin}/api/imports` && response.request().method() === "POST");
     await page.getByRole("button", { name: "Preview CSV" }).click();
     const staged = await previewRequest;
+    expect(staged.status()).toBe(201);
     const stagedHeaders = await staged.request().allHeaders();
     const workflow = stagedHeaders["x-correlation-id"];
     expect(workflow).toMatch(/^[0-9a-f-]{36}$/);
@@ -57,6 +56,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     expect(confirmHeaders["x-request-id"]).not.toBe(stagedHeaders["x-request-id"]);
     await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
     await expect(page.getByText(`${count} transactions imported`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Import Coverage" })).toContainText(`Nov ${lastDay}, 2026`);
     await expect(page).toHaveURL(previewURL);
     await page.reload();
     await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
@@ -64,6 +64,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
 
     await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Importação confirmada" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Cobertura da importação" })).toContainText(`${lastDay} de nov. de 2026`);
     await page.getByRole("link", { name: "Acompanhar processamento" }).click();
     await expect(page.getByRole("heading", { name: "Processamento da conciliação" })).toBeVisible();
     await expect(page.getByRole("status")).toHaveText("Concluído", { timeout: 15_000 });
@@ -130,8 +131,6 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await page.goto(`${origin}/workspace/imports`);
     await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), "Demo ERP");
     await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
-    await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
-    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(fixture);
     await page.getByRole("button", { name: "Preview CSV" }).click();
   }
@@ -212,8 +211,6 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     multipart: {
       source_id: sourceID,
       financial_account_id: accountID,
-      period_start: "2026-11-16",
-      period_end: "2026-11-22",
       file: { name: "earlier.csv", mimeType: "text/csv", buffer: Buffer.from(header + "ERP-WEB-RACE,,2026-11-20,20.00,BRL,Competing import\n") },
     },
   });
@@ -234,13 +231,13 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await uploadReimport({
     name: "reference-free.csv",
     mimeType: "text/csv",
-    buffer: Buffer.from(header + ",,2026-11-22,1.00,BRL,No Source Reference\n"),
+    buffer: Buffer.from(header + ",,2026-11-20,1.00,BRL,No Source Reference\n"),
   });
   const overlap = page.getByRole("alert").filter({ hasText: "The dates overlap an earlier import" });
-  await expect(overlap).toContainText("Corporate Card covers Nov 16, 2026 through Nov 22, 2026");
+  await expect(overlap).toContainText("Corporate Card covers Nov 16, 2026 through Nov 20, 2026");
   await changeWorkspaceLanguage(page, "pt-BR");
   const localizedOverlap = page.getByRole("alert").filter({ hasText: "As datas se sobrepõem" });
-  await expect(localizedOverlap).toContainText("Corporate Card abrange o período de 16 de nov. de 2026 a 22 de nov. de 2026");
+  await expect(localizedOverlap).toContainText("Corporate Card abrange o período de 16 de nov. de 2026 a 20 de nov. de 2026");
 
   await page.goto(detailURL);
   await changeWorkspaceLanguage(page, "en");

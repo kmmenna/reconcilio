@@ -139,7 +139,13 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		t.Helper()
 		body := new(bytes.Buffer)
 		form := multipart.NewWriter(body)
-		fields := map[string]string{"source_id": source.ID, "period_start": start, "period_end": end}
+		fields := map[string]string{"source_id": source.ID}
+		if start != "" {
+			fields["period_start"] = start
+		}
+		if end != "" {
+			fields["period_end"] = end
+		}
 		if accountID != "" {
 			fields["financial_account_id"] = accountID
 		}
@@ -168,7 +174,7 @@ func TestCatalogAndMixedImports(t *testing.T) {
 			"ERP-2,,2026-11-03,240,JPY,Second,\n" +
 			"ERP-3,,2026-11-03,300,JPY,Third\n"
 		var result httpapi.Problem
-		readResponse(t, upload("", start, end, data), http.StatusUnprocessableEntity, &result)
+		readResponse(t, upload("", "", "", data), http.StatusUnprocessableEntity, &result)
 		if result.Code != "invalid_csv" || len(result.Issues) != 3 ||
 			result.Issues[0].Line != 2 || result.Issues[0].Field != "financial_account" ||
 			result.Issues[0].Reason != "unknown_financial_account" || result.Issues[0].Value != "unregistered-bank" ||
@@ -185,11 +191,14 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		return request(http.MethodPost, importsURL+id+"/"+action, "", nil)
 	}
 	type stagedImport struct {
-		ID       string                     `json:"id"`
-		Status   string                     `json:"status"`
-		Source   catalog.Source             `json:"source"`
-		Accounts []catalog.FinancialAccount `json:"financial_accounts"`
-		Rows     []struct {
+		ID              string                     `json:"id"`
+		Status          string                     `json:"status"`
+		Source          catalog.Source             `json:"source"`
+		Accounts        []catalog.FinancialAccount `json:"financial_accounts"`
+		AccountCoverage []accountCoverageResponse  `json:"account_coverage"`
+		PeriodStart     string                     `json:"period_start"`
+		PeriodEnd       string                     `json:"period_end"`
+		Rows            []struct {
 			ID        string `json:"financial_account_id"`
 			Reference string `json:"source_reference"`
 		} `json:"rows"`
@@ -207,7 +216,7 @@ func TestCatalogAndMixedImports(t *testing.T) {
 			"ERP-1,,2026-11-03,240,JPY,Second,operating-bank\n" +
 			",,2026-11-03,100,JPY,Third,operating-bank\n"
 		var preview stagedImport
-		first := upload("", start, end, data)
+		first := upload("", "", "", data)
 		readResponse(t, first, http.StatusCreated, &preview)
 		if preview.Source.Name != "Sistema Financeiro" || preview.Source.Side != "external" ||
 			len(preview.Accounts) != 2 || !slices.Contains(preview.Accounts, account) || !slices.Contains(preview.Accounts, demoAccount) ||
@@ -215,7 +224,14 @@ func TestCatalogAndMixedImports(t *testing.T) {
 			preview.Rows[1].ID != account.ID || preview.Rows[2].ID != account.ID {
 			t.Fatalf("unexpected account assignments: %+v", preview)
 		}
-		// Prepare a second preview with the same bytes to verify confirmation replay.
+		cardCoverage := accountCoverageResponse{AccountID: demoAccount.ID, PeriodStart: "2026-11-02", PeriodEnd: "2026-11-02", Basis: "inferred"}
+		bankCoverage := accountCoverageResponse{AccountID: account.ID, PeriodStart: "2026-11-03", PeriodEnd: "2026-11-03", Basis: "inferred"}
+		if preview.PeriodStart != "2026-11-02" || preview.PeriodEnd != "2026-11-03" || len(preview.AccountCoverage) != 2 ||
+			!slices.Contains(preview.AccountCoverage, cardCoverage) || !slices.Contains(preview.AccountCoverage, bankCoverage) {
+			t.Fatalf("unexpected per-account coverage: %+v", preview)
+		}
+
+		// Use identical bytes and a different declared period to verify confirmation replay.
 		var duplicate stagedImport
 		readResponse(t, upload("", start, end, data), http.StatusCreated, &duplicate)
 
@@ -234,16 +250,23 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		var refreshed, duplicateRefreshed stagedImport
 		readResponse(t, action(preview.ID, "refresh-preview"), http.StatusCreated, &refreshed)
 		readResponse(t, action(duplicate.ID, "refresh-preview"), http.StatusCreated, &duplicateRefreshed)
-		if refreshed.ID == preview.ID || refreshed.Source.Side != "internal" || !slices.Equal(refreshed.Rows, preview.Rows) {
+		if refreshed.ID == preview.ID || refreshed.Source.Side != "internal" || !slices.Equal(refreshed.Rows, preview.Rows) ||
+			!slices.Equal(refreshed.AccountCoverage, preview.AccountCoverage) || refreshed.PeriodStart != preview.PeriodStart || refreshed.PeriodEnd != preview.PeriodEnd {
 			t.Fatalf("unexpected refreshed preview: %+v", refreshed)
+		}
+		if duplicateRefreshed.PeriodStart != start || duplicateRefreshed.PeriodEnd != end || len(duplicateRefreshed.AccountCoverage) != 2 ||
+			!slices.Contains(duplicateRefreshed.AccountCoverage, accountCoverageResponse{AccountID: demoAccount.ID, PeriodStart: start, PeriodEnd: end, Basis: "declared"}) ||
+			!slices.Contains(duplicateRefreshed.AccountCoverage, accountCoverageResponse{AccountID: account.ID, PeriodStart: start, PeriodEnd: end, Basis: "declared"}) {
+			t.Fatalf("refresh changed the declared coverage: %+v", duplicateRefreshed)
 		}
 		if original := request(http.MethodGet, importsURL+preview.ID, "", nil); original.Code != http.StatusOK || original.Body.String() != first.Body.String() {
 			t.Fatalf("refresh changed the original preview: %d %s", original.Code, original.Body)
 		}
 
 		var receipt struct {
-			ID               string `json:"id"`
-			TransactionCount int    `json:"transaction_count"`
+			ID               string                    `json:"id"`
+			TransactionCount int                       `json:"transaction_count"`
+			AccountCoverage  []accountCoverageResponse `json:"account_coverage"`
 			Jobs             []struct {
 				ID      int64                    `json:"job_id"`
 				Account catalog.FinancialAccount `json:"financial_account"`
@@ -251,7 +274,8 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		}
 		confirmed := action(refreshed.ID, "confirm")
 		readResponse(t, confirmed, http.StatusOK, &receipt)
-		if receipt.ID != refreshed.ID || receipt.TransactionCount != 3 || len(receipt.Jobs) != 2 {
+		if receipt.ID != refreshed.ID || receipt.TransactionCount != 3 || len(receipt.Jobs) != 2 ||
+			!slices.Equal(receipt.AccountCoverage, preview.AccountCoverage) {
 			t.Fatalf("unexpected receipt: %+v", receipt)
 		}
 		if receipt.Jobs[0].ID == receipt.Jobs[1].ID || receipt.Jobs[0].Account.ID == receipt.Jobs[1].Account.ID {
@@ -268,6 +292,7 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		}
 		for _, replay := range []*httptest.ResponseRecorder{
 			action(duplicateRefreshed.ID, "confirm"),
+			upload("", "", "", data),
 			upload("", "2026-11-02", "2026-11-03", data),
 			request(http.MethodGet, importsURL+refreshed.ID, "", nil),
 		} {
@@ -286,7 +311,7 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		}
 
 		// A reference-free row in the other account does not block this referenced overlap.
-		readResponse(t, upload(demoAccount.ID, start, end, csvHeader+"ERP-2,,2026-11-02,12,BRL,Another payment\n"),
+		readResponse(t, upload(demoAccount.ID, "", "", csvHeader+"ERP-2,,2026-11-02,12,BRL,Another payment\n"),
 			http.StatusCreated, new(stagedImport))
 		var overlap struct {
 			Code    string `json:"code"`
@@ -313,13 +338,47 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		}
 	})
 
+	t.Run("uses each account's inferred dates for preview and confirmed overlap", func(t *testing.T) {
+		var prior stagedImport
+		readResponse(t, upload(account.ID, "", "", csvHeader+",,2027-02-03,5,BRL,Earlier bank statement\n"), http.StatusCreated, &prior)
+		readResponse(t, action(prior.ID, "confirm"), http.StatusOK, new(any))
+
+		// The mixed range starts on the earlier bank import's date. Only the card had activity that day.
+		var mixed stagedImport
+		const data = "MIXED-CARD,,2027-02-03,10,BRL,Card,corporate-card\n" +
+			",,2027-02-07,5,BRL,Bank,operating-bank\n"
+		readResponse(t, upload("", "", "", mixedHeader+data), http.StatusCreated, &mixed)
+		readResponse(t, action(mixed.ID, "confirm"), http.StatusOK, new(any))
+
+		readResponse(t, upload(account.ID, "", "", csvHeader+",,2027-02-05,9,BRL,Bank activity before its mixed coverage\n"),
+			http.StatusCreated, new(stagedImport))
+		var blocked struct {
+			Code    string `json:"code"`
+			Context struct {
+				Coverage struct {
+					ImportID    string                   `json:"import_id"`
+					Account     catalog.FinancialAccount `json:"financial_account"`
+					PeriodStart string                   `json:"period_start"`
+					PeriodEnd   string                   `json:"period_end"`
+				} `json:"coverage"`
+			} `json:"context"`
+		}
+		readResponse(t, upload("", "", "", mixedHeader+
+			"MIXED-NEW-CARD,,2027-02-06,1,BRL,Card,corporate-card\n"+
+			"MIXED-NEW-BANK,,2027-02-07,2,BRL,Bank,operating-bank\n"), http.StatusConflict, &blocked)
+		coverage := blocked.Context.Coverage
+		if blocked.Code != "import_coverage_overlap" || coverage.ImportID != mixed.ID || coverage.Account.ID != account.ID ||
+			coverage.PeriodStart != "2027-02-07" || coverage.PeriodEnd != "2027-02-07" {
+			t.Fatalf("expected overlap at the operating bank's inclusive endpoint: %+v", blocked)
+		}
+	})
+
 	t.Run("revalidates every account before committing any account", func(t *testing.T) {
-		const start, end = "2026-12-06", "2026-12-06"
 		var pending, prior stagedImport
-		readResponse(t, upload("", start, end, mixedHeader+
-			",,2026-12-06,8,BRL,Corporate,corporate-card\n"+
+		readResponse(t, upload("", "", "", mixedHeader+
+			",,2026-12-05,8,BRL,Corporate,corporate-card\n"+
 			",,2026-12-06,20,BRL,Operating,operating-bank\n"), http.StatusCreated, &pending)
-		readResponse(t, upload(account.ID, start, end, csvHeader+",,2026-12-06,5,BRL,First operating import\n"),
+		readResponse(t, upload(account.ID, "", "", csvHeader+",,2026-12-06,5,BRL,First operating import\n"),
 			http.StatusCreated, &prior)
 		readResponse(t, action(prior.ID, "confirm"), http.StatusOK, new(any))
 		readResponse(t, action(pending.ID, "confirm"), http.StatusConflict, &problem)
@@ -331,7 +390,7 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		if stillPending.Status != "pending" {
 			t.Fatalf("mixed import did not remain pending: %+v", stillPending)
 		}
-		readResponse(t, upload(demoAccount.ID, start, end, csvHeader+",,2026-12-06,9,BRL,First corporate import\n"),
+		readResponse(t, upload(demoAccount.ID, "", "", csvHeader+",,2026-12-05,9,BRL,First corporate import\n"),
 			http.StatusCreated, &prior)
 		readResponse(t, action(prior.ID, "confirm"), http.StatusOK, new(any))
 	})

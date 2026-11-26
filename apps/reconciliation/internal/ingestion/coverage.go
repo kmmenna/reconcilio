@@ -1,6 +1,7 @@
 package ingestion
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,10 +9,58 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 )
+
+type accountCoverage struct {
+	FinancialAccountID string `json:"financial_account_id" format:"uuid"`
+	PeriodStart        string `json:"period_start" format:"date"`
+	PeriodEnd          string `json:"period_end" format:"date"`
+	Basis              string `json:"basis" enum:"inferred,declared"`
+}
+
+type coveragePeriod struct {
+	start pgtype.Date
+	end   pgtype.Date
+	basis string
+}
+
+func assignCoverage(accounts []importAccount, rows []stagedRow, declared coveragePeriod) coveragePeriod {
+	if declared.start.Valid {
+		declared.basis = "declared"
+		for i := range accounts {
+			accounts[i].coverage = declared
+		}
+		return declared
+	}
+
+	positions := make(map[string]int, len(accounts))
+	for i, account := range accounts {
+		positions[account.entry.ID] = i
+		accounts[i].coverage.basis = "inferred"
+	}
+	var summary coveragePeriod
+	for _, row := range rows {
+		// Validation has already checked every date and account assignment.
+		date, _ := parseDate(row.TransactionDate)
+		summary.include(date)
+		position := positions[cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)]
+		accounts[position].coverage.include(date)
+	}
+	return summary
+}
+
+func (p *coveragePeriod) include(date time.Time) {
+	if !p.start.Valid || date.Before(p.start.Time) {
+		p.start = pgtype.Date{Time: date, Valid: true}
+	}
+	if !p.end.Valid || date.After(p.end.Time) {
+		p.end = pgtype.Date{Time: date, Valid: true}
+	}
+}
 
 type coverageOverlap struct {
 	ImportID                    string                   `json:"import_id" format:"uuid"`

@@ -45,10 +45,18 @@ type conflictResponse struct {
 	} `json:"incoming"`
 }
 
+type accountCoverageResponse struct {
+	AccountID   string `json:"financial_account_id"`
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+	Basis       string `json:"basis"`
+}
+
 type previewResponse struct {
-	Conflicts        []conflictResponse `json:"conflicts"`
-	Decision         string             `json:"decision"`
-	TransactionCount *int               `json:"transaction_count"`
+	AccountCoverage  []accountCoverageResponse `json:"account_coverage"`
+	Conflicts        []conflictResponse        `json:"conflicts"`
+	Decision         string                    `json:"decision"`
+	TransactionCount *int                      `json:"transaction_count"`
 
 	ID     string `json:"id"`
 	Status string `json:"status"`
@@ -163,9 +171,14 @@ func TestCSVImportPreview(t *testing.T) {
 		t.Helper()
 		body := new(bytes.Buffer)
 		form := multipart.NewWriter(body)
-		for name, value := range map[string]string{
-			"source_id": source, "financial_account_id": account, "period_start": periodStart, "period_end": periodEnd,
-		} {
+		fields := map[string]string{"source_id": source, "financial_account_id": account}
+		if periodStart != "" {
+			fields["period_start"] = periodStart
+		}
+		if periodEnd != "" {
+			fields["period_end"] = periodEnd
+		}
+		for name, value := range fields {
 			if err := form.WriteField(name, value); err != nil {
 				t.Fatal(err)
 			}
@@ -581,6 +594,7 @@ func TestCSVImportPreview(t *testing.T) {
 			confirm(exactStaged, http.StatusOK, &original),
 			request(http.MethodGet, "/api/imports/"+exactStaged.ID, session.Token, "", nil),
 			upload(session.Token, sourceID, accountID, october1, october10, referenceFree),
+			upload(session.Token, sourceID, accountID, "", "", referenceFree),
 		} {
 			if replay.Code != http.StatusOK || replay.Body.String() != first.Body.String() {
 				t.Fatalf("exact reference-free replay was not recognized: status=%d %s", replay.Code, replay.Body)
@@ -788,16 +802,26 @@ func TestCSVImportPreview(t *testing.T) {
 				httpapi.Issue{Line: 2, Field: "row", Reason: "invalid_column_count"}},
 			{"malformed CSV", sourceID, accountID, start, end, csvHeader + "ERP-001,,2026-11-16,1,BRL,\"unterminated\n", "invalid_csv",
 				httpapi.Issue{Line: 2, Field: "row", Reason: "invalid_record"}},
-			{"header only", sourceID, accountID, start, end, csvHeader, "invalid_csv",
+			{"header only with inferred coverage", sourceID, accountID, "", "", csvHeader, "invalid_csv",
 				httpapi.Issue{Field: "file", Reason: "no_rows"}},
 			{"unknown source", uuid.New().String(), accountID, start, end, csv, "invalid_import_selection",
 				httpapi.Issue{Field: "source_id", Reason: "unknown_source"}},
-			{"unknown financial account", sourceID, uuid.New().String(), start, end, csv, "invalid_import_selection",
+			{"unknown financial account", sourceID, uuid.New().String(), "", "", csv, "invalid_import_selection",
 				httpapi.Issue{Field: "financial_account_id", Reason: "unknown_financial_account"}},
 			{"invalid account ID", sourceID, "bad-id", start, end, csv, "invalid_import_selection",
 				httpapi.Issue{Field: "financial_account_id", Reason: "invalid_financial_account"}},
 			{"reversed period", sourceID, accountID, end, start, csv, "invalid_import_selection",
 				httpapi.Issue{Field: "period_end", Reason: "invalid_period"}},
+			{"missing period start", sourceID, accountID, "", end, csv, "invalid_import_selection",
+				httpapi.Issue{Field: "period_start", Reason: "invalid_date"}},
+			{"missing period end", sourceID, accountID, start, "", csv, "invalid_import_selection",
+				httpapi.Issue{Field: "period_end", Reason: "invalid_date"}},
+			{"out of declared period with year one start", sourceID, accountID, "0001-01-01", end,
+				csvHeader + "OUTSIDE,,2026-12-01,1,BRL,Out of period\n", "invalid_csv",
+				httpapi.Issue{Line: 2, Field: "transaction_date", Reason: "outside_period"}},
+			{"invalid date during inference", sourceID, accountID, "", "",
+				csvHeader + "BAD-DATE,,2024-04-31,1,BRL,Invalid date\n", "invalid_csv",
+				httpapi.Issue{Line: 2, Field: "transaction_date", Reason: "invalid_date"}},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				var problem httpapi.Problem
@@ -807,6 +831,116 @@ func TestCSVImportPreview(t *testing.T) {
 					t.Fatalf("unexpected problem: %+v", problem)
 				}
 			})
+		}
+	})
+
+	t.Run("infers coverage from unsorted rows and retains it through confirmation", func(t *testing.T) {
+		csv := csvHeader + "INFER-LATE,,2024-04-03,25.00,BRL,Later\n" +
+			"INFER-EARLY,,2024-04-01,25.00,BRL,Earlier\n" +
+			"INFER-MIDDLE,,2024-04-02,25.00,BRL,Middle\n"
+		var preview previewResponse
+		response := upload(session.Token, sourceID, accountID, "", "", csv)
+		readResponse(t, response, http.StatusCreated, &preview)
+		want := accountCoverageResponse{AccountID: accountID, PeriodStart: "2024-04-01", PeriodEnd: "2024-04-03", Basis: "inferred"}
+		if preview.PeriodStart != want.PeriodStart || preview.PeriodEnd != want.PeriodEnd ||
+			!slices.Equal(preview.AccountCoverage, []accountCoverageResponse{want}) {
+			t.Fatalf("unexpected inferred coverage: %+v", preview)
+		}
+		path := "/api/imports/" + preview.ID
+		reload := request(http.MethodGet, path, session.Token, "", nil)
+		if reload.Code != http.StatusOK || reload.Body.String() != response.Body.String() {
+			t.Fatalf("reloaded preview differs: status=%d body=%s", reload.Code, reload.Body)
+		}
+		var receipt previewResponse
+		readResponse(t, request(http.MethodPost, path+"/confirm", session.Token, "", nil), http.StatusOK, &receipt)
+		if receipt.PeriodStart != want.PeriodStart || receipt.PeriodEnd != want.PeriodEnd ||
+			!slices.Equal(receipt.AccountCoverage, []accountCoverageResponse{want}) {
+			t.Fatalf("unexpected confirmed coverage: %+v", receipt)
+		}
+	})
+
+	t.Run("retains the dates of replayed and rejected Transaction rows in coverage", func(t *testing.T) {
+		const originalFile = csvHeader + "INFER-CONFLICT,,2025-01-02,1,BRL,Original\n" +
+			"INFER-REPLAY,,2025-01-20,3,BRL,Already imported\n"
+		var original previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, "", "", originalFile), http.StatusCreated, &original)
+		readResponse(t, request(http.MethodPost, "/api/imports/"+original.ID+"/confirm", session.Token, "", nil), http.StatusOK, new(any))
+
+		const next = csvHeader + "INFER-REPLAY,,2025-01-20,3,BRL,Already imported\n" +
+			"INFER-CONFLICT,,2025-01-01,2,BRL,Conflicting values\n" +
+			"INFER-NEW,,2025-01-04,1,BRL,New Transaction\n"
+		var preview previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, "", "", next), http.StatusCreated, &preview)
+		want := accountCoverageResponse{AccountID: accountID, PeriodStart: "2025-01-01", PeriodEnd: "2025-01-20", Basis: "inferred"}
+		if len(preview.Conflicts) != 1 || !slices.Equal(preview.AccountCoverage, []accountCoverageResponse{want}) {
+			t.Fatalf("unexpected inferred coverage or conflicts: %+v", preview)
+		}
+
+		decisions := fmt.Sprintf(`{"keep_original_conflict_ids":[%q]}`, preview.Conflicts[0].ID)
+		var receipt previewResponse
+		readResponse(t, request(http.MethodPost, "/api/imports/"+preview.ID+"/confirm", session.Token, "application/json", strings.NewReader(decisions)),
+			http.StatusOK, &receipt)
+		if receipt.TransactionCount == nil || *receipt.TransactionCount != 1 || receipt.Decision != "keep_original" ||
+			!slices.Equal(receipt.AccountCoverage, []accountCoverageResponse{want}) {
+			t.Fatalf("receipt did not preserve the coverage of the submitted CSV: %+v", receipt)
+		}
+
+		probe := csvHeader + ",,2025-01-01,5,BRL,Coverage on the skipped date\n"
+		var blocked httpapi.Problem
+		readResponse(t, upload(session.Token, sourceID, accountID, "", "", probe), http.StatusConflict, &blocked)
+		if blocked.Code != "import_coverage_overlap" {
+			t.Fatalf("coverage missed the conflict row's date: %+v", blocked)
+		}
+	})
+
+	t.Run("honors the recorded period of legacy pending previews and receipts", func(t *testing.T) {
+		const first, last = "2024-08-01", "2024-08-31"
+		const file = csvHeader + ",,2024-08-10,6,BRL,Legacy declared import\n"
+		var pending previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, first, last, file), http.StatusCreated, &pending)
+		// Legacy assignments store only the account ID. Their dates are recorded on the import.
+		if _, err := pool.Exec(t.Context(), `
+			UPDATE import_financial_accounts SET period_start = NULL, period_end = NULL WHERE import_id = $1::text::uuid
+		`, pending.ID); err != nil {
+			t.Fatal(err)
+		}
+		path := "/api/imports/" + pending.ID
+		want := accountCoverageResponse{AccountID: accountID, PeriodStart: first, PeriodEnd: last, Basis: "declared"}
+		var refreshed previewResponse
+		readResponse(t, request(http.MethodGet, path, session.Token, "", nil), http.StatusOK, &pending)
+		readResponse(t, request(http.MethodPost, path+"/refresh-preview", session.Token, "", nil), http.StatusCreated, &refreshed)
+		for _, preview := range []previewResponse{pending, refreshed} {
+			if preview.PeriodStart != first || preview.PeriodEnd != last ||
+				!slices.Equal(preview.AccountCoverage, []accountCoverageResponse{want}) {
+				t.Fatalf("legacy preview did not retain the recorded coverage: %+v", preview)
+			}
+		}
+
+		var receipt previewResponse
+		readResponse(t, request(http.MethodPost, path+"/confirm", session.Token, "", nil), http.StatusOK, &receipt)
+		if !slices.Equal(receipt.AccountCoverage, []accountCoverageResponse{want}) {
+			t.Fatalf("legacy pending import confirmed with different coverage: %+v", receipt)
+		}
+		var blocked httpapi.Problem
+		readResponse(t, upload(session.Token, sourceID, accountID, "", "", csvHeader+",,2024-08-31,5,BRL,Legacy endpoint\n"),
+			http.StatusConflict, &blocked)
+		if blocked.Code != "import_coverage_overlap" {
+			t.Fatalf("legacy pending import missed the recorded period end: %+v", blocked)
+		}
+
+		// Archived receipts predate the account-level periods and keep their original shape.
+		if _, err := pool.Exec(t.Context(), `UPDATE imports SET receipt = receipt - 'account_coverage' WHERE id = $1::text::uuid`, pending.ID); err != nil {
+			t.Fatal(err)
+		}
+		archived := request(http.MethodGet, path, session.Token, "", nil)
+		receipt = previewResponse{}
+		readResponse(t, archived, http.StatusOK, &receipt)
+		if receipt.PeriodStart != first || receipt.PeriodEnd != last || len(receipt.AccountCoverage) != 0 {
+			t.Fatalf("unexpected archived receipt: %+v", receipt)
+		}
+		replayed := upload(session.Token, sourceID, accountID, "", "", file)
+		if replayed.Code != http.StatusOK || replayed.Body.String() != archived.Body.String() {
+			t.Fatalf("replay did not return the archived receipt: %d %s", replayed.Code, replayed.Body)
 		}
 	})
 

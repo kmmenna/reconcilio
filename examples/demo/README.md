@@ -1,11 +1,11 @@
 # Reconciliation demo data
 
-These synthetic files describe activity on one **Financial Account**. For both imports, select Corporate Card (`corporate-card`) and use November 16 through November 22, 2026, inclusive, as the coverage period. Select the preconfigured **Source** for each file.
+These synthetic files describe activity on one **Financial Account**. For both imports, select Corporate Card (`corporate-card`). Select the preconfigured **Source** for each file and check the inferred **Import Coverage** in the preview.
 
-| File | Side | Source |
-| --- | --- | --- |
-| [internal.csv](internal.csv) | Internal | Demo ERP |
-| [external.csv](external.csv) | External | Demo Card Statement |
+| File | Side | Source | Import Coverage |
+| --- | --- | --- | --- |
+| [internal.csv](internal.csv) | Internal | Demo ERP | November 16–20, 2026 |
+| [external.csv](external.csv) | External | Demo Card Statement | November 16–21, 2026 |
 
 Both files use the six-column CSV format from the [Reconcilio MVP spec](https://github.com/kmmenna/reconcilio/issues/1). Negative amounts represent purchases on both sides. A blank `payment_reference` leaves the decision to analyst review when eligible candidates are found.
 

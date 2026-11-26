@@ -11,19 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const assignImportAccounts = `-- name: AssignImportAccounts :exec
-INSERT INTO import_financial_accounts (import_id, financial_account_id)
-SELECT $1::uuid, unnest($2::uuid[])
-`
-
 type AssignImportAccountsParams struct {
-	ImportID   pgtype.UUID
-	AccountIds []pgtype.UUID
-}
-
-func (q *Queries) AssignImportAccounts(ctx context.Context, arg AssignImportAccountsParams) error {
-	_, err := q.db.Exec(ctx, assignImportAccounts, arg.ImportID, arg.AccountIds)
-	return err
+	ImportID           pgtype.UUID
+	FinancialAccountID pgtype.UUID
+	PeriodStart        pgtype.Date
+	PeriodEnd          pgtype.Date
+	CoverageBasis      string
 }
 
 const cancelImport = `-- name: CancelImport :exec
@@ -258,23 +251,43 @@ type InsertTransactionsParams struct {
 }
 
 const listImportAccounts = `-- name: ListImportAccounts :many
-SELECT a.id, a.code, a.name
+SELECT a.id, a.code, a.name,
+       COALESCE(ia.period_start, i.period_start)::date AS period_start,
+       COALESCE(ia.period_end, i.period_end)::date AS period_end,
+       ia.coverage_basis
 FROM import_financial_accounts ia
 JOIN financial_accounts a ON a.id = ia.financial_account_id
+JOIN imports i ON i.id = ia.import_id
 WHERE ia.import_id = $1
 ORDER BY a.id
 `
 
-func (q *Queries) ListImportAccounts(ctx context.Context, importID pgtype.UUID) ([]FinancialAccount, error) {
+type ListImportAccountsRow struct {
+	ID            pgtype.UUID
+	Code          string
+	Name          string
+	PeriodStart   pgtype.Date
+	PeriodEnd     pgtype.Date
+	CoverageBasis string
+}
+
+func (q *Queries) ListImportAccounts(ctx context.Context, importID pgtype.UUID) ([]ListImportAccountsRow, error) {
 	rows, err := q.db.Query(ctx, listImportAccounts, importID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []FinancialAccount
+	var items []ListImportAccountsRow
 	for rows.Next() {
-		var i FinancialAccount
-		if err := rows.Scan(&i.ID, &i.Code, &i.Name); err != nil {
+		var i ListImportAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.PeriodStart,
+			&i.PeriodEnd,
+			&i.CoverageBasis,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

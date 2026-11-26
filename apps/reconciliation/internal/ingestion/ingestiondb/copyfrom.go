@@ -9,6 +9,42 @@ import (
 	"context"
 )
 
+// iteratorForAssignImportAccounts implements pgx.CopyFromSource.
+type iteratorForAssignImportAccounts struct {
+	rows                 []AssignImportAccountsParams
+	skippedFirstNextCall bool
+}
+
+func (r *iteratorForAssignImportAccounts) Next() bool {
+	if len(r.rows) == 0 {
+		return false
+	}
+	if !r.skippedFirstNextCall {
+		r.skippedFirstNextCall = true
+		return true
+	}
+	r.rows = r.rows[1:]
+	return len(r.rows) > 0
+}
+
+func (r iteratorForAssignImportAccounts) Values() ([]interface{}, error) {
+	return []interface{}{
+		r.rows[0].ImportID,
+		r.rows[0].FinancialAccountID,
+		r.rows[0].PeriodStart,
+		r.rows[0].PeriodEnd,
+		r.rows[0].CoverageBasis,
+	}, nil
+}
+
+func (r iteratorForAssignImportAccounts) Err() error {
+	return nil
+}
+
+func (q *Queries) AssignImportAccounts(ctx context.Context, arg []AssignImportAccountsParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"import_financial_accounts"}, []string{"import_id", "financial_account_id", "period_start", "period_end", "coverage_basis"}, &iteratorForAssignImportAccounts{rows: arg})
+}
+
 // iteratorForInsertTransactions implements pgx.CopyFromSource.
 type iteratorForInsertTransactions struct {
 	rows                 []InsertTransactionsParams

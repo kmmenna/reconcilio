@@ -37,30 +37,15 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   });
   expect(crossOrigin.status()).toBe(403);
 
-  const startDate = page.getByLabel("Start date", { exact: true });
-  const startCalendar = page.getByRole("button", { name: "Open calendar for Start date" });
-  await startDate.pressSequentially("1115");
-  await expect(startDate).toHaveValue("11/15");
-  await startDate.pressSequentially("2026");
-  await expect(startDate).toHaveValue("11/15/2026");
-  await startCalendar.press("Enter");
-  const calendar = page.getByRole("dialog", { name: "Calendar for Start date" });
-  await expect(calendar.getByRole("button", { name: /Sunday, November 15, 2026$/ })).toBeFocused();
-  await page.keyboard.press("ArrowRight");
-  await expect(calendar.getByRole("button", { name: /Monday, November 16, 2026$/ })).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(calendar).toBeHidden();
-  await expect(startCalendar).toBeFocused();
-  await expect(startDate).toHaveValue("11/16/2026");
+  await expect(page.getByLabel("Start date", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("End date", { exact: true })).toHaveCount(0);
 
-  for (const [source, fixture, text, reference, side] of [
-    ["Demo ERP", "internal.csv", "Cloud hosting subscription", "ERP-001", "Internal"],
-    ["Demo Card Statement", "external.csv", "CLOUDHOST* MONTHLY", "CARD-001", "External"],
+  for (const [source, fixture, text, reference, side, lastDay] of [
+    ["Demo ERP", "internal.csv", "Cloud hosting subscription", "ERP-001", "Internal", "20"],
+    ["Demo Card Statement", "external.csv", "CLOUDHOST* MONTHLY", "CARD-001", "External", "21"],
   ]) {
     await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), source);
     await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
-    if (source !== "Demo ERP") await startDate.fill("11/16/2026");
-    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     const data = await readFile(resolve(__dirname, "../../../examples/demo", fixture));
     // Keep this preview distinct from the confirmation smoke test's exact file replay.
     await page.getByLabel("CSV file", { exact: true }).setInputFiles({
@@ -70,7 +55,10 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     await expect(page.getByRole("heading", { name: "Import preview" })).toBeVisible();
     await expect(page.getByText("Pending review", { exact: true })).toBeVisible();
     await expect(page.getByText(source, { exact: true })).toBeVisible();
-    await expect(page.getByText("Corporate Card", { exact: true })).toBeVisible();
+    const coverage = page.getByRole("region", { name: "Import Coverage" });
+    await expect(coverage.getByText("Corporate Card", { exact: true })).toBeVisible();
+    await expect(coverage).toContainText("Nov 16, 2026");
+    await expect(coverage).toContainText(`Nov ${lastDay}, 2026`);
     await expect(page.getByText(side, { exact: true })).toBeVisible();
     const row = page.getByRole("row").filter({ hasText: reference });
     await expect(row.getByText(text, { exact: true })).toBeVisible();
@@ -81,12 +69,15 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Prévia da importação" })).toBeVisible();
     await expect(row.getByText("-R$ 89,90", { exact: true })).toBeVisible();
-    await expect(page.locator('time[datetime="2026-11-16"]').first()).toHaveText("16 de nov. de 2026");
+    const localizedCoverage = page.getByRole("region", { name: "Cobertura da importação" });
+    await expect(localizedCoverage).toContainText("16 de nov. de 2026");
+    await expect(localizedCoverage).toContainText(`${lastDay} de nov. de 2026`);
     await expect(page).toHaveURL(previewURL);
 
     await page.reload();
     await expect(page.getByRole("heading", { name: "Prévia da importação" })).toBeVisible();
     await expect(row.getByText(text, { exact: true })).toBeVisible();
+    await expect(localizedCoverage).toContainText(`${lastDay} de nov. de 2026`);
     await expect(page).toHaveURL(previewURL);
 
     await changeWorkspaceLanguage(page, "en");
@@ -95,8 +86,6 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
 
   await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), "Demo ERP");
   await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
-  await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
-  await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
   await page.getByLabel("CSV file", { exact: true }).setInputFiles({
     name: "invalid.csv",
     mimeType: "text/csv",
@@ -114,26 +103,8 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await changeWorkspaceLanguage(page, "pt-BR");
   await expect(error).toContainText("Linha 2 · Valor");
   await expect(error).toContainText("casas decimais demais");
-  await expect(page.getByLabel("Data inicial", { exact: true })).toHaveValue("16/11/2026");
-  const localizedEndDate = page.getByLabel("Data final", { exact: true });
-  await expect(localizedEndDate).toHaveValue("22/11/2026");
-  await localizedEndDate.fill("");
-  await localizedEndDate.pressSequentially("22112026");
-  await expect(localizedEndDate).toHaveValue("22/11/2026");
-  await localizedEndDate.press("Home");
-  await localizedEndDate.press("ArrowRight");
-  await localizedEndDate.press("Shift+ArrowRight");
-  await localizedEndDate.press("3");
-  await expect(localizedEndDate).toHaveValue("23/11/2026");
-  await localizedEndDate.fill("2026-11-22");
-  await expect(localizedEndDate).toHaveValue("22/11/2026");
-  const endCalendar = page.getByRole("button", { name: "Abrir calendário — Data final" });
+  await expect(page.getByLabel("Data inicial", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Data final", { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 320, height: 700 });
-  await endCalendar.click();
-  const localizedCalendar = page.getByRole("dialog", { name: "Calendário — Data final" });
-  await expect(localizedCalendar.getByRole("button", { name: "Mês anterior" })).toBeVisible();
-  await localizedCalendar.getByRole("button", { name: /segunda-feira, 23 de novembro de 2026$/ }).click();
-  await expect(localizedCalendar).toBeHidden();
-  await expect(page.getByLabel("Data final", { exact: true })).toHaveValue("23/11/2026");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });
