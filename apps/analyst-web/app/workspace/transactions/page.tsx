@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
-import { Button } from "@/components/ui/button";
 import type { OpenTransaction } from "@/lib/reconciliation";
 import { formatMoney, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -9,22 +8,16 @@ import { readWorkspaceResource } from "@/lib/workspace-api";
 
 export default async function OpenTransactionsPage() {
   const token = await getWorkspaceToken();
-  const [transactions, t, imports, review, locale] = await Promise.all([
+  const [transactions, t, imports, locale] = await Promise.all([
     readWorkspaceResource<OpenTransaction[]>("/api/transactions?status=open", token),
     getTranslations("Transactions"),
     getTranslations("Imports"),
-    getTranslations("Review"),
     getLocale(),
   ]);
 
   return (
     <main className="workspace">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="page-title">{t("title")}</h1>
-        <Button asChild variant="outline" className="h-11">
-          <Link href="/workspace">{review("backToWorkspace")}</Link>
-        </Button>
-      </div>
+      <h1 className="page-title">{t("title")}</h1>
       {!transactions ? (
         <p className="mt-6 text-destructive" role="alert">{t("unavailable")}</p>
       ) : transactions.length === 0 ? (

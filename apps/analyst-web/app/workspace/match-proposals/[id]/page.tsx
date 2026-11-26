@@ -29,11 +29,11 @@ export default async function MatchProposalPage({ params }: { params: Promise<{ 
           <h1 className="page-title">{t("proposalTitle")}</h1>
           {proposal && <p className="mt-2 text-muted-foreground wrap-anywhere">{proposal.financial_account.name}</p>}
         </div>
-        <Button asChild variant="outline" className="h-11">
-          <Link href={proposal ? `/workspace/review/${proposal.internal_transaction.id}` : "/workspace/review"}>
-            {t(proposal ? "backToGroup" : "backToQueue")}
-          </Link>
-        </Button>
+        {proposal && (
+          <Button asChild variant="outline" className="h-11">
+            <Link href={`/workspace/review/${proposal.internal_transaction.id}`}>{t("backToGroup")}</Link>
+          </Button>
+        )}
       </div>
       {proposal ? (
         <ReviewDecisions workflow={workflow}>

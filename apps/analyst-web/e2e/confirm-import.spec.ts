@@ -18,7 +18,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  const navigation = page.getByRole("navigation", { name: "Workspace navigation" });
+  const navigation = page.getByRole("navigation", { name: /^(Workspace navigation|Navegação da área de conciliação)$/ });
   const currentSection = navigation.locator('[aria-current="location"]');
 
   for (const [source, fixture, count] of [
@@ -295,7 +295,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page.getByText(/^(Accepted|Aceita)$/)).toBeVisible();
   await page.goto(groupURL);
   await expect(page.getByText("Não há alternativas pendentes para esta transação.", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Voltar à fila de revisão" }).click();
+  await navigation.getByRole("link", { name: "Fila de revisão", exact: true }).click();
   await expect(page.getByText("Nenhuma proposta de conciliação aguarda revisão.", { exact: true })).toBeVisible();
 
   const [conflict, refreshed] = await Promise.all([

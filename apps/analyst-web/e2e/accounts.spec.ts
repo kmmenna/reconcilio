@@ -73,7 +73,8 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await page.goto(`${origin}/workspace/users/new`);
   await expect(createUser).toHaveCount(0);
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Ask an administrator to create the account.");
-  await page.getByRole("link", { name: "Back to workspace" }).click();
+  await header.getByRole("link", { name: "Reconcilio" }).click();
+  await expect(page).toHaveURL(`${origin}/workspace/imports`);
 
   await page.setViewportSize({ width: 320, height: 720 });
   await accountMenu.click();

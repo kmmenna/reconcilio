@@ -26,7 +26,6 @@
     "signingOut": "Signing out…"
   },
   "Accounts": {
-    "workspace": "Back to workspace",
     "profileTitle": "My profile",
     "createTitle": "Create user",
     "nameHeading": "Account details",

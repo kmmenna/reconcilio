@@ -1,7 +1,6 @@
 {
   "title": "Importar CSV",
   "intro": "Selecione a fonte, a atribuição das contas e o período coberto pelo CSV.",
-  "workspace": "Área de trabalho",
   "dateFormat": "DD/MM/AAAA",
   "chooseSource": "Selecione uma fonte",
   "chooseAccount": "Selecione uma conta financeira",
@@ -110,7 +109,6 @@
     "missing_financial_account": "Informe um código de conta financeira cadastrado.",
     "unknown_financial_account_code": "O código {code} não está cadastrado."
   },
-  "manageCatalog": "Gerenciar catálogo",
   "useCSVAccountCodes": "Usar os códigos de conta do CSV",
   "mixedHelp": "Preencha a coluna financial_account de cada linha com um código cadastrado no catálogo.",
   "multipleAccounts": "Contas financeiras",

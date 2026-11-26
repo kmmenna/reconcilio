@@ -1,20 +1,9 @@
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { getTranslations } from "next-intl/server";
 import type { ReactNode } from "react";
 
-export async function AccountPage({ title, children }: { title: string; children: ReactNode }) {
-  const t = await getTranslations("Accounts");
+export function AccountPage({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="workspace">
-      <Link
-        href="/workspace"
-        className="inline-flex min-h-9 items-center gap-2 rounded-md text-sm font-medium text-primary underline-offset-4 hover:underline"
-      >
-        <ArrowLeft className="size-4" aria-hidden="true" />
-        {t("workspace")}
-      </Link>
-      <h1 className="page-title mt-3">{title}</h1>
+      <h1 className="page-title">{title}</h1>
       <div className="mt-8 max-w-4xl border-b border-border">{children}</div>
     </main>
   );

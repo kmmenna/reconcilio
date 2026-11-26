@@ -41,11 +41,11 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
           {confirmed && <p className="mt-3 text-muted-foreground">{t("importedCount", { count: preview.transaction_count })}</p>}
           {canceled && <p className="mt-3 text-muted-foreground">{t("canceledSummary")}</p>}
         </div>
-        <div className="flex flex-wrap items-start gap-2">
+        {preview && (
           <Button asChild variant="outline" className="h-11">
             <Link href="/workspace/imports">{t("anotherImport")}</Link>
           </Button>
-        </div>
+        )}
       </div>
       {preview ? (
         <>

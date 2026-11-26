@@ -3,7 +3,6 @@ import { getLocale, getTranslations } from "next-intl/server";
 
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { RankingAssessment } from "@/components/review/ranking-assessment";
-import { Button } from "@/components/ui/button";
 import type { ReconciliationDetail } from "@/lib/reconciliation";
 import { formatMoney, formatTimestamp, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -22,15 +21,8 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
 
   return (
     <main className="workspace">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="page-title">{t("detailTitle")}</h1>
-          {result && <p className="mt-3 text-muted-foreground wrap-anywhere">{result.financial_account.name}</p>}
-        </div>
-        <Button asChild variant="outline" className="h-11">
-          <Link href="/workspace/reconciliations">{t("backToList")}</Link>
-        </Button>
-      </div>
+      <h1 className="page-title">{t("detailTitle")}</h1>
+      {result && <p className="mt-3 text-muted-foreground wrap-anywhere">{result.financial_account.name}</p>}
       {result ? (
         <>
           <dl className="mt-7 grid gap-4 border-y border-border py-5 sm:grid-cols-3">
