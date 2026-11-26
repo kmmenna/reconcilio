@@ -54,6 +54,10 @@
     "unavailable": "Não foi possível carregar os dados da conta. Recarregue a página e tente novamente."
   },
   "Errors": {
+    "match_proposal_conflict": "Esta proposta mudou. As alternativas restantes foram atualizadas.",
+    "match_proposal_not_found": "A proposta de conciliação não foi encontrada.",
+    "invalid_ranking_evaluation": "A avaliação de classificação não abrange esta proposta.",
+    "review_unavailable": "Não foi possível salvar a decisão. Tente novamente.",
     "invalid_origin": "Faça esta solicitação na área de trabalho do Reconcilio.",
     "invalid_content_type": "Recarregue a página e tente novamente.",
     "invalid_sign_in": "Informe um nome de usuário e uma senha válidos.",

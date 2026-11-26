@@ -36,6 +36,8 @@ type detailOutput struct {
 
 func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 	bearer := []map[string][]string{{"bearer": {}}}
+	s.registerReviewHTTP(api, identities, bearer)
+	s.registerDecisionHTTP(api, identities, bearer)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-reconciliations",
 		Method:      http.MethodGet,

@@ -32,7 +32,7 @@ type MatchEvidence struct {
 	Currency               string `json:"currency"`
 }
 
-// ProcessAccount confirms current automatic matches and can safely repeat after a retry.
+// ProcessAccount confirms current automatic matches and publishes proposals under the account lock.
 func (s *Service) ProcessAccount(ctx context.Context, accountID pgtype.UUID, jobID int64) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if err := catalog.LockFinancialAccounts(ctx, tx, []pgtype.UUID{accountID}); err != nil {
@@ -53,20 +53,18 @@ func (s *Service) ProcessAccount(ctx context.Context, accountID pgtype.UUID, job
 			if err != nil {
 				return fmt.Errorf("encode automatic match evidence: %w", err)
 			}
-			id, err := queries.CreateReconciliation(ctx, reconciliationdb.CreateReconciliationParams{
+			id, err := recordReconciliationPair(ctx, queries, reconciliationdb.CreateReconciliationParams{
 				FinancialAccountID: accountID, Method: "automatic", Evidence: data,
 				JobID: pgtype.Int8{Int64: jobID, Valid: true},
-			})
+			}, pair.InternalID, pair.ExternalID)
 			if err != nil {
-				return fmt.Errorf("record automatic reconciliation: %w", err)
+				return err
 			}
-			if err := queries.InsertReconciliationPair(ctx, reconciliationdb.InsertReconciliationPairParams{
-				ReconciliationID: id, InternalID: pair.InternalID, ExternalID: pair.ExternalID,
-			}); err != nil {
-				return fmt.Errorf("record automatic reconciliation members: %w", err)
+			if err := invalidateCompetingProposals(ctx, queries, id, pair.InternalID, pair.ExternalID, pgtype.Text{}); err != nil {
+				return err
 			}
 		}
-		return nil
+		return publishMatchProposals(ctx, queries, accountID, jobID)
 	})
 }
 
@@ -99,9 +97,11 @@ type DecisionActor struct {
 
 type Detail struct {
 	Summary
-	Actor    DecisionActor  `json:"actor"`
-	Members  []Transaction  `json:"members"`
-	Evidence *MatchEvidence `json:"evidence,omitempty"`
+	Actor            DecisionActor     `json:"actor"`
+	Members          []Transaction     `json:"members"`
+	Evidence         *MatchEvidence    `json:"evidence,omitempty"`
+	MatchProposalID  string            `json:"match_proposal_id,omitempty" format:"uuid"`
+	ProposalEvidence *ProposalEvidence `json:"proposal_evidence,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context, accountID pgtype.UUID) ([]Summary, error) {
@@ -140,14 +140,7 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (Detail, error) {
 		detail.Actor = DecisionActor{Kind: "analyst", UserID: record.ConfirmedBy.String(), DisplayName: row.AnalystName}
 	}
 	for _, member := range members {
-		item := member.Transaction
-		transaction := Transaction{
-			ID: item.ID.String(), Side: member.Side,
-			Source:          catalog.Source{ID: item.SourceID.String(), Name: member.SourceName, Side: item.SourceSide},
-			SourceReference: item.SourceReference.String, PaymentReference: item.PaymentReference.String,
-			TransactionDate: item.TransactionDate.Time.Format(time.DateOnly),
-			Amount:          money.Decimal(item.AmountMinor, int(item.MinorDigits)), Currency: item.Currency, Description: item.Description,
-		}
+		transaction := presentTransaction(member.Transaction, member.SourceName)
 		if member.Side == "internal" {
 			detail.Amount = transaction.Amount
 			detail.Currency = transaction.Currency
@@ -160,6 +153,18 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (Detail, error) {
 			return Detail{}, err
 		}
 		detail.Evidence = &evidence
+	} else {
+		proposalID, err := s.queries.GetAcceptedMatchProposalID(ctx, id)
+		if err != nil {
+			return Detail{}, fmt.Errorf("find accepted proposal: %w", err)
+		}
+		proposal, err := s.GetMatchProposal(ctx, proposalID)
+		if err != nil {
+			return Detail{}, fmt.Errorf("load accepted proposal: %w", err)
+		}
+		detail.MatchProposalID = proposal.ID
+		detail.ProposalEvidence = &proposal.Evidence
+		detail.Actor = *proposal.Actor
 	}
 	return detail, nil
 }
@@ -178,4 +183,14 @@ func readAutomaticEvidence(data []byte, amount, currency string) (MatchEvidence,
 
 func presentAccount(row reconciliationdb.FinancialAccount) catalog.FinancialAccount {
 	return catalog.FinancialAccount{ID: row.ID.String(), Code: row.Code, Name: row.Name}
+}
+
+func presentTransaction(item reconciliationdb.Transaction, sourceName string) Transaction {
+	return Transaction{
+		ID: item.ID.String(), Side: item.SourceSide,
+		Source:          catalog.Source{ID: item.SourceID.String(), Name: sourceName, Side: item.SourceSide},
+		SourceReference: item.SourceReference.String, PaymentReference: item.PaymentReference.String,
+		TransactionDate: item.TransactionDate.Time.Format(time.DateOnly),
+		Amount:          money.Decimal(item.AmountMinor, int(item.MinorDigits)), Currency: item.Currency, Description: item.Description,
+	}
 }

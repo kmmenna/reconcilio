@@ -531,6 +531,16 @@ func TestCSVImportPreview(t *testing.T) {
 		if len(results) != 0 {
 			t.Fatalf("filter returned results from another Financial Account: %+v", results)
 		}
+
+		verifyProposalReview(t, accountID, func(method, path string) *httptest.ResponseRecorder {
+			return request(method, path, session.Token, "", nil)
+		}, func(sourceSide, csv string) {
+			source := sourceID
+			if sourceSide == "external" {
+				source = externalID
+			}
+			waitForJob(confirmImport(stageCSV(source, csv)), 0)
+		})
 	})
 
 	t.Run("blocks inclusive coverage for either import with missing references and replays exact files", func(t *testing.T) {

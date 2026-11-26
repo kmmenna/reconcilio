@@ -1,0 +1,52 @@
+{
+  "title": "Fila de revisão",
+  "backToWorkspace": "Voltar ao espaço de trabalho",
+  "backToQueue": "Voltar à fila de revisão",
+  "backToGroup": "Voltar às alternativas",
+  "empty": "Nenhuma proposta de conciliação aguarda revisão.",
+  "unavailable": "Não foi possível carregar a revisão. Atualize a página para tentar novamente.",
+  "groupNotFound": "A transação interna não foi encontrada.",
+  "proposalNotFound": "A proposta de conciliação não foi encontrada.",
+  "groupTitle": "Comparar propostas de conciliação",
+  "groupEmpty": "Não há alternativas pendentes para esta transação.",
+  "alternatives": "{count, plural, one {# alternativa pendente} other {# alternativas pendentes}}",
+  "compare": "Comparar alternativas",
+  "proposalTitle": "Proposta de conciliação",
+  "internal": "Transação interna",
+  "external": "Transação externa",
+  "alternative": "Alternativa externa",
+  "viewProposal": "Ver proposta",
+  "confirm": "Confirmar conciliação",
+  "reject": "Rejeitar proposta",
+  "saving": "Salvando decisão…",
+  "recorded": "Proposta em",
+  "resolved": "Resolvida em",
+  "actor": "Resolvida por",
+  "engine": "Motor de conciliação",
+  "viewReconciliation": "Ver conciliação",
+  "states": {
+    "pending": "Pendente",
+    "accepted": "Aceita",
+    "rejected": "Rejeitada",
+    "invalidated": "Invalidada"
+  },
+  "outcomes": {
+    "pending": "Esta proposta aguarda a decisão de um analista.",
+    "accepted": "Estas transações foram conciliadas.",
+    "rejected": "Este par de transações foi rejeitado.",
+    "invalidated": "Uma conciliação concorrente resolveu uma destas transações."
+  },
+  "evidence": {
+    "title": "Evidências originais da proposta",
+    "reference": "Comparação das referências de pagamento",
+    "referenceCounts": "Internas {internal, number} · Externas {external, number}",
+    "relations": {
+      "missing": "Ausente em um ou ambos os lados",
+      "different": "Referências diferentes",
+      "shared": "Referência em comum com múltiplas ocorrências"
+    },
+    "dateDifference": "Diferença entre as datas",
+    "daysApart": "{count, plural, =0 {Mesma data} one {# dia} other {# dias}}",
+    "matchedAmount": "Mesmo valor com sinal"
+  }
+}
