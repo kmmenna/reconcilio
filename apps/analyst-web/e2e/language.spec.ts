@@ -5,7 +5,7 @@ const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 test.describe("Browser language preference", () => {
   test.use({ locale: "pt-BR" });
 
-  test("detects Portuguese, keeps a manual choice through sign-in and sign-out, and restores automatic detection", async ({ page }) => {
+  test("detects Portuguese, keeps a manual choice through sign-in and sign-out, and restores automatic detection", async ({ page, context }) => {
     const password = process.env.RECONCILIO_SMOKE_PASSWORD;
     if (!password) throw new Error("Run the smoke task or set RECONCILIO_SMOKE_PASSWORD.");
 
@@ -82,7 +82,15 @@ test.describe("Browser language preference", () => {
     await expect(page).toHaveURL(`${origin}/workspace/transactions`);
     await page.reload();
     await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
-    await page.getByRole("button", { name: "Sair", exact: true }).click();
+
+    await page.getByRole("banner").getByRole("button", { name: "Administrator admin", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Meu perfil", exact: true })).toBeVisible();
+    const signOut = page.getByRole("menuitem", { name: "Sair", exact: true });
+    await context.setOffline(true);
+    await signOut.click();
+    await expect(page.getByRole("menu").getByRole("alert")).toHaveText("Não foi possível sair. Tente novamente.");
+    await context.setOffline(false);
+    await signOut.click();
     await expect(page.getByRole("heading", { name: "Entrar", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
 

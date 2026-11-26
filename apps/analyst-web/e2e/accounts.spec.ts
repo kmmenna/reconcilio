@@ -16,6 +16,9 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   const displayName = "Cecília de Sá";
   const initialPassword = "initial-password";
   const newPassword = "changed-password";
+  const header = page.getByRole("banner");
+  const accountMenu = header.getByRole("button", { name: `${displayName} ${username}`, exact: true });
+  const signOut = page.getByRole("menuitem", { name: "Sign out", exact: true });
 
   await page.goto(`${origin}/login`);
   await signIn(page, "admin", adminPassword);
@@ -43,7 +46,9 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(page).toHaveURL(`${origin}/workspace/users/new`);
   await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Create user" })).toBeVisible();
+  await header.getByRole("button", { name: "Administrator admin", exact: true }).click();
+  await signOut.click();
   await expect(page).toHaveURL(`${origin}/login`);
   await page.reload();
   await signIn(page, username, initialPassword);
@@ -52,12 +57,24 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await page.goto(`${origin}/workspace/users/new`);
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Ask an administrator to create the account.");
   await page.getByRole("link", { name: "Back to workspace" }).click();
-  await page.getByRole("link", { name: "My profile" }).click();
+
+  await page.setViewportSize({ width: 320, height: 720 });
+  await accountMenu.click();
+  const nameLine = accountMenu.getByText(displayName, { exact: true });
+  const usernameLine = accountMenu.getByText(username, { exact: true });
+  await expect(nameLine).toBeInViewport({ ratio: 1 });
+  await expect(usernameLine).toBeInViewport({ ratio: 1 });
+  expect((await usernameLine.boundingBox())!.y).toBeGreaterThan((await nameLine.boundingBox())!.y);
+  await expect(page.getByRole("menu")).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.getByRole("menuitem", { name: "My profile" }).click();
 
   await expect(page.getByLabel("Display name")).toHaveValue(displayName);
   await page.getByLabel("Display name").fill("Cecília Sá Costa");
   await page.getByRole("button", { name: "Save display name" }).click();
   await expect(page.getByText("Display name saved.", { exact: true })).toBeVisible();
+  const updatedAccountMenu = header.getByRole("button", { name: `Cecília Sá Costa ${username}`, exact: true });
+  await expect(updatedAccountMenu).toBeVisible();
 
   await page.getByLabel("Current password").fill("incorrect-password");
   await page.getByLabel("New password").fill(newPassword);
@@ -69,11 +86,12 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(page.getByLabel("Current password")).toBeEmpty();
   await expect(page.getByLabel("New password")).toBeEmpty();
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await updatedAccountMenu.click();
+  await signOut.click();
   await expect(page).toHaveURL(`${origin}/login`);
   await page.reload();
   await signIn(page, username, initialPassword);
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("The username or password is incorrect.");
   await signIn(page, username, newPassword);
-  await expect(page.getByText("Cecília Sá Costa", { exact: true })).toBeVisible();
+  await expect(updatedAccountMenu).toBeVisible();
 });

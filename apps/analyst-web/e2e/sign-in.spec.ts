@@ -31,12 +31,39 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
   await fields().password.fill(password);
   await fields().submit.click();
   await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
-  await expect(page.getByText("Administrator", { exact: true })).toBeVisible();
+  const header = page.getByRole("banner");
+  const account = header.getByRole("button", { name: "Administrator admin", exact: true });
+  await expect(account.getByText("Administrator", { exact: true })).toBeVisible();
+  await expect(account.getByText("admin", { exact: true })).toBeVisible();
+  const main = page.getByRole("main");
+  await expect(main.getByText("Administrator", { exact: true })).toHaveCount(0);
+  await expect(main.getByText("admin", { exact: true })).toHaveCount(0);
+  await expect(main.getByRole("link", { name: "My profile" })).toHaveCount(0);
   const session = (await context.cookies()).find((cookie) => cookie.name === "reconcilio_session");
   expect(session).toMatchObject({ httpOnly: true, sameSite: "Lax" });
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
+
+  const profileAction = page.getByRole("menuitem", { name: "My profile" });
+  await expect(account).toHaveAttribute("aria-expanded", "false");
+  await account.press("Enter");
+  await expect(account).toHaveAttribute("aria-expanded", "true");
+  await expect(profileAction).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", { name: "Sign out" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(account).toBeFocused();
+  await expect(account).toHaveCSS("outline-style", "solid");
+  await expect(account).toHaveAttribute("aria-expanded", "false");
+
+  await account.press("Enter");
+  await expect(profileAction).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(`${origin}/workspace/profile`);
+  await expect(account).toBeVisible();
+  await header.getByRole("link", { name: "Reconcilio" }).click();
+  await expect(page).toHaveURL(`${origin}/workspace`);
 
   const denied = await context.request.post(`${origin}/api/auth/logout`);
   expect(denied.status()).toBe(403);
@@ -44,7 +71,22 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
     headers: { Origin: "https://example.invalid" },
   });
   expect(crossOrigin.status()).toBe(403);
-  await page.getByRole("button", { name: "Sign out" }).click();
+
+  const logout = Promise.withResolvers<void>();
+  await page.route(`${origin}/api/auth/logout`, async (route) => {
+    await logout.promise;
+    await route.continue();
+  }, { times: 1 });
+  const signOutAction = page.getByRole("menuitem", { name: "Sign out", exact: true });
+  await account.press("Enter");
+  await expect(profileAction).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  try {
+    await signOutAction.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Signing out…" })).toBeDisabled();
+  } finally {
+    logout.resolve();
+  }
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   expect((await context.cookies()).some((cookie) => cookie.name === "reconcilio_session")).toBe(false);
   await page.goto(`${origin}/workspace`);
