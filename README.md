@@ -59,6 +59,19 @@ ANALYST_WEB_PORT=3001
 
 Run `mise run compose:up` in each worktree. The browser apps open on [localhost:3000](http://localhost:3000) and [localhost:3001](http://localhost:3001). Each project has its own PostgreSQL volume and needs its own initial administrator.
 
+### Run the Next.js frontend on the host
+
+Install the frontend dependencies, then start Next.js in its own terminal.
+
+```sh
+mise run web:install
+mise run analyst-web:dev
+```
+
+Open the frontend at `http://localhost:<ANALYST_WEB_PORT>` (port 3000 by default). The frontend task starts independently. Sign-in and other API-backed features require a reachable Go API, which you can start in another terminal with `mise run reconciliation:dev`.
+
+Set `BACKEND_API_ORIGIN` in `apps/analyst-web/.env` to tell Next.js which Go API to call. It defaults to `http://localhost:<RECONCILIATION_API_PORT>` for host development. Set `WEB_ORIGIN` in the same file if the browser opens the frontend at a different origin. Next.js uses that address to validate browser requests.
+
 ### Corporate Card walkthrough
 
 1. Choose **English** from **Language** at sign-in or in the workspace to follow these button labels. **Português (Brasil)** switches the interface, dates, Money, and errors. **Automatic** returns to your browser preference. Shared links keep the same address and open in the signed-in reader’s language.
