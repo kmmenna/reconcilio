@@ -23,6 +23,42 @@ func (q *Queries) CountAutomaticReconciliations(ctx context.Context, jobID pgtyp
 	return count, err
 }
 
+const countMatchProposals = `-- name: CountMatchProposals :one
+SELECT count(*) FROM match_proposals WHERE job_id = $1
+`
+
+func (q *Queries) CountMatchProposals(ctx context.Context, jobID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countMatchProposals, jobID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createMatchProposal = `-- name: CreateMatchProposal :exec
+INSERT INTO match_proposals (financial_account_id, internal_transaction_id, external_transaction_id, evidence, job_id)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (internal_transaction_id, external_transaction_id) WHERE status = 'pending' DO NOTHING
+`
+
+type CreateMatchProposalParams struct {
+	FinancialAccountID    pgtype.UUID
+	InternalTransactionID pgtype.UUID
+	ExternalTransactionID pgtype.UUID
+	Evidence              []byte
+	JobID                 int64
+}
+
+func (q *Queries) CreateMatchProposal(ctx context.Context, arg CreateMatchProposalParams) error {
+	_, err := q.db.Exec(ctx, createMatchProposal,
+		arg.FinancialAccountID,
+		arg.InternalTransactionID,
+		arg.ExternalTransactionID,
+		arg.Evidence,
+		arg.JobID,
+	)
+	return err
+}
+
 const createReconciliation = `-- name: CreateReconciliation :one
 INSERT INTO reconciliations (financial_account_id, method, confirmed_by, evidence, job_id)
 VALUES ($1, $2, $3, $4, $5)
@@ -48,6 +84,41 @@ func (q *Queries) CreateReconciliation(ctx context.Context, arg CreateReconcilia
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const getAcceptedMatchProposalID = `-- name: GetAcceptedMatchProposalID :one
+SELECT id FROM match_proposals WHERE reconciliation_id = $1 AND status = 'accepted'
+`
+
+func (q *Queries) GetAcceptedMatchProposalID(ctx context.Context, reconciliationID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getAcceptedMatchProposalID, reconciliationID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getMatchProposalRecord = `-- name: GetMatchProposalRecord :one
+SELECT id, financial_account_id, internal_transaction_id, external_transaction_id, status, evidence, created_at, job_id, resolved_at, resolved_by, resolved_by_name, reconciliation_id FROM match_proposals WHERE id = $1
+`
+
+func (q *Queries) GetMatchProposalRecord(ctx context.Context, id pgtype.UUID) (MatchProposal, error) {
+	row := q.db.QueryRow(ctx, getMatchProposalRecord, id)
+	var i MatchProposal
+	err := row.Scan(
+		&i.ID,
+		&i.FinancialAccountID,
+		&i.InternalTransactionID,
+		&i.ExternalTransactionID,
+		&i.Status,
+		&i.Evidence,
+		&i.CreatedAt,
+		&i.JobID,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.ResolvedByName,
+		&i.ReconciliationID,
+	)
+	return i, err
 }
 
 const getReconciliation = `-- name: GetReconciliation :one
@@ -84,6 +155,44 @@ func (q *Queries) GetReconciliation(ctx context.Context, id pgtype.UUID) (GetRec
 	return i, err
 }
 
+const getReviewTransaction = `-- name: GetReviewTransaction :one
+SELECT transactions.id, transactions.import_id, transactions.financial_account_id, transactions.source_id, transactions.source_side, transactions.source_reference, transactions.payment_reference, transactions.transaction_date, transactions.amount_minor, transactions.currency, transactions.minor_digits, transactions.description, financial_accounts.id, financial_accounts.code, financial_accounts.name, sources.name AS source_name
+FROM transactions
+JOIN financial_accounts ON financial_accounts.id = transactions.financial_account_id
+JOIN sources ON sources.id = transactions.source_id
+WHERE transactions.id = $1 AND transactions.source_side = 'internal'
+`
+
+type GetReviewTransactionRow struct {
+	Transaction      Transaction
+	FinancialAccount FinancialAccount
+	SourceName       string
+}
+
+func (q *Queries) GetReviewTransaction(ctx context.Context, id pgtype.UUID) (GetReviewTransactionRow, error) {
+	row := q.db.QueryRow(ctx, getReviewTransaction, id)
+	var i GetReviewTransactionRow
+	err := row.Scan(
+		&i.Transaction.ID,
+		&i.Transaction.ImportID,
+		&i.Transaction.FinancialAccountID,
+		&i.Transaction.SourceID,
+		&i.Transaction.SourceSide,
+		&i.Transaction.SourceReference,
+		&i.Transaction.PaymentReference,
+		&i.Transaction.TransactionDate,
+		&i.Transaction.AmountMinor,
+		&i.Transaction.Currency,
+		&i.Transaction.MinorDigits,
+		&i.Transaction.Description,
+		&i.FinancialAccount.ID,
+		&i.FinancialAccount.Code,
+		&i.FinancialAccount.Name,
+		&i.SourceName,
+	)
+	return i, err
+}
+
 const insertReconciliationPair = `-- name: InsertReconciliationPair :exec
 INSERT INTO reconciliation_members (reconciliation_id, transaction_id, side)
 VALUES ($1, $2, 'internal'),
@@ -98,6 +207,38 @@ type InsertReconciliationPairParams struct {
 
 func (q *Queries) InsertReconciliationPair(ctx context.Context, arg InsertReconciliationPairParams) error {
 	_, err := q.db.Exec(ctx, insertReconciliationPair, arg.ReconciliationID, arg.InternalID, arg.ExternalID)
+	return err
+}
+
+const invalidateCompetingMatchProposals = `-- name: InvalidateCompetingMatchProposals :exec
+UPDATE match_proposals
+SET status = 'invalidated',
+    resolved_at = reconciliations.confirmed_at,
+    resolved_by = reconciliations.confirmed_by,
+    resolved_by_name = $1,
+    reconciliation_id = reconciliations.id
+FROM reconciliations
+WHERE reconciliations.id = $2
+  AND match_proposals.financial_account_id = reconciliations.financial_account_id
+  AND match_proposals.status = 'pending'
+  AND (match_proposals.internal_transaction_id = $3
+       OR match_proposals.external_transaction_id = $4)
+`
+
+type InvalidateCompetingMatchProposalsParams struct {
+	AnalystName      pgtype.Text
+	ReconciliationID pgtype.UUID
+	InternalID       pgtype.UUID
+	ExternalID       pgtype.UUID
+}
+
+func (q *Queries) InvalidateCompetingMatchProposals(ctx context.Context, arg InvalidateCompetingMatchProposalsParams) error {
+	_, err := q.db.Exec(ctx, invalidateCompetingMatchProposals,
+		arg.AnalystName,
+		arg.ReconciliationID,
+		arg.InternalID,
+		arg.ExternalID,
+	)
 	return err
 }
 
@@ -123,6 +264,10 @@ WHERE internal.amount_minor = external.amount_minor
   AND NOT EXISTS (
       SELECT 1 FROM reconciliation_members
       WHERE transaction_id IN (internal.id, external.id) AND released_at IS NULL
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM match_proposals
+      WHERE internal_transaction_id = internal.id AND external_transaction_id = external.id AND status = 'rejected'
   )
 ORDER BY internal.id
 `
@@ -152,6 +297,75 @@ func (q *Queries) ListAutomaticPairs(ctx context.Context, financialAccountID pgt
 			&i.AmountMinor,
 			&i.Currency,
 			&i.MinorDigits,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMatchProposals = `-- name: ListMatchProposals :many
+SELECT match_proposals.id, match_proposals.financial_account_id, match_proposals.internal_transaction_id, match_proposals.external_transaction_id, match_proposals.status, match_proposals.evidence, match_proposals.created_at, match_proposals.job_id, match_proposals.resolved_at, match_proposals.resolved_by, match_proposals.resolved_by_name, match_proposals.reconciliation_id, transactions.id, transactions.import_id, transactions.financial_account_id, transactions.source_id, transactions.source_side, transactions.source_reference, transactions.payment_reference, transactions.transaction_date, transactions.amount_minor, transactions.currency, transactions.minor_digits, transactions.description, sources.name AS source_name
+FROM match_proposals
+JOIN transactions ON transactions.id = match_proposals.external_transaction_id
+JOIN sources ON sources.id = transactions.source_id
+WHERE match_proposals.id = $1::uuid
+   OR (match_proposals.internal_transaction_id = $2::uuid AND match_proposals.status = 'pending')
+ORDER BY (match_proposals.evidence->>'reference_relation' = 'shared') DESC,
+         (match_proposals.evidence->>'days_apart')::integer,
+         match_proposals.external_transaction_id
+`
+
+type ListMatchProposalsParams struct {
+	ProposalID pgtype.UUID
+	InternalID pgtype.UUID
+}
+
+type ListMatchProposalsRow struct {
+	MatchProposal MatchProposal
+	Transaction   Transaction
+	SourceName    string
+}
+
+func (q *Queries) ListMatchProposals(ctx context.Context, arg ListMatchProposalsParams) ([]ListMatchProposalsRow, error) {
+	rows, err := q.db.Query(ctx, listMatchProposals, arg.ProposalID, arg.InternalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMatchProposalsRow
+	for rows.Next() {
+		var i ListMatchProposalsRow
+		if err := rows.Scan(
+			&i.MatchProposal.ID,
+			&i.MatchProposal.FinancialAccountID,
+			&i.MatchProposal.InternalTransactionID,
+			&i.MatchProposal.ExternalTransactionID,
+			&i.MatchProposal.Status,
+			&i.MatchProposal.Evidence,
+			&i.MatchProposal.CreatedAt,
+			&i.MatchProposal.JobID,
+			&i.MatchProposal.ResolvedAt,
+			&i.MatchProposal.ResolvedBy,
+			&i.MatchProposal.ResolvedByName,
+			&i.MatchProposal.ReconciliationID,
+			&i.Transaction.ID,
+			&i.Transaction.ImportID,
+			&i.Transaction.FinancialAccountID,
+			&i.Transaction.SourceID,
+			&i.Transaction.SourceSide,
+			&i.Transaction.SourceReference,
+			&i.Transaction.PaymentReference,
+			&i.Transaction.TransactionDate,
+			&i.Transaction.AmountMinor,
+			&i.Transaction.Currency,
+			&i.Transaction.MinorDigits,
+			&i.Transaction.Description,
+			&i.SourceName,
 		); err != nil {
 			return nil, err
 		}
@@ -262,4 +476,195 @@ func (q *Queries) ListReconciliations(ctx context.Context, accountID pgtype.UUID
 		return nil, err
 	}
 	return items, nil
+}
+
+const listReviewCandidates = `-- name: ListReviewCandidates :many
+WITH reference_counts AS (
+    SELECT payment_reference, count(*) FILTER (WHERE source_side = 'internal') AS internal_count,
+           count(*) FILTER (WHERE source_side = 'external') AS external_count
+    FROM transactions
+    WHERE financial_account_id = $1 AND payment_reference IS NOT NULL
+    GROUP BY payment_reference
+)
+SELECT internal.id AS internal_id, external.id AS external_id,
+       CASE
+           WHEN internal.payment_reference IS NULL OR external.payment_reference IS NULL THEN 'missing'
+           WHEN internal.payment_reference = external.payment_reference THEN 'shared'
+           ELSE 'different'
+       END AS reference_relation,
+       abs(internal.transaction_date - external.transaction_date)::integer AS days_apart,
+       coalesce(reference_counts.internal_count, 0)::bigint AS internal_reference_count,
+       coalesce(reference_counts.external_count, 0)::bigint AS external_reference_count,
+       internal.amount_minor, internal.currency, internal.minor_digits
+FROM transactions AS internal
+JOIN transactions AS external ON external.financial_account_id = internal.financial_account_id
+    AND external.source_side = 'external'
+    AND external.currency = internal.currency AND external.amount_minor = internal.amount_minor
+    AND external.minor_digits = internal.minor_digits
+    AND external.transaction_date BETWEEN internal.transaction_date - 3 AND internal.transaction_date + 3
+LEFT JOIN reference_counts ON reference_counts.payment_reference = internal.payment_reference
+    AND reference_counts.payment_reference = external.payment_reference
+WHERE internal.financial_account_id = $1
+  AND internal.source_side = 'internal'
+  AND ($2::uuid IS NULL OR internal.id = $2)
+  AND ($3::uuid IS NULL OR external.id = $3)
+  AND (reference_counts.payment_reference IS NULL OR reference_counts.internal_count > 1 OR reference_counts.external_count > 1)
+  AND NOT EXISTS (
+      SELECT 1 FROM reconciliation_members
+      WHERE transaction_id IN (internal.id, external.id) AND released_at IS NULL
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM match_proposals
+      WHERE internal_transaction_id = internal.id AND external_transaction_id = external.id AND status = 'rejected'
+  )
+`
+
+type ListReviewCandidatesParams struct {
+	AccountID  pgtype.UUID
+	InternalID pgtype.UUID
+	ExternalID pgtype.UUID
+}
+
+type ListReviewCandidatesRow struct {
+	InternalID             pgtype.UUID
+	ExternalID             pgtype.UUID
+	ReferenceRelation      string
+	DaysApart              int32
+	InternalReferenceCount int64
+	ExternalReferenceCount int64
+	AmountMinor            int64
+	Currency               string
+	MinorDigits            int32
+}
+
+func (q *Queries) ListReviewCandidates(ctx context.Context, arg ListReviewCandidatesParams) ([]ListReviewCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listReviewCandidates, arg.AccountID, arg.InternalID, arg.ExternalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReviewCandidatesRow
+	for rows.Next() {
+		var i ListReviewCandidatesRow
+		if err := rows.Scan(
+			&i.InternalID,
+			&i.ExternalID,
+			&i.ReferenceRelation,
+			&i.DaysApart,
+			&i.InternalReferenceCount,
+			&i.ExternalReferenceCount,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.MinorDigits,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReviewQueue = `-- name: ListReviewQueue :many
+SELECT transactions.id, transactions.import_id, transactions.financial_account_id, transactions.source_id, transactions.source_side, transactions.source_reference, transactions.payment_reference, transactions.transaction_date, transactions.amount_minor, transactions.currency, transactions.minor_digits, transactions.description, financial_accounts.id, financial_accounts.code, financial_accounts.name, sources.name AS source_name, groups.pending_count
+FROM (
+    SELECT internal_transaction_id, count(*) AS pending_count
+    FROM match_proposals
+    WHERE status = 'pending'
+    GROUP BY internal_transaction_id
+) AS groups
+JOIN transactions ON transactions.id = groups.internal_transaction_id
+JOIN financial_accounts ON financial_accounts.id = transactions.financial_account_id
+JOIN sources ON sources.id = transactions.source_id
+ORDER BY transactions.transaction_date, transactions.id
+`
+
+type ListReviewQueueRow struct {
+	Transaction      Transaction
+	FinancialAccount FinancialAccount
+	SourceName       string
+	PendingCount     int64
+}
+
+func (q *Queries) ListReviewQueue(ctx context.Context) ([]ListReviewQueueRow, error) {
+	rows, err := q.db.Query(ctx, listReviewQueue)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReviewQueueRow
+	for rows.Next() {
+		var i ListReviewQueueRow
+		if err := rows.Scan(
+			&i.Transaction.ID,
+			&i.Transaction.ImportID,
+			&i.Transaction.FinancialAccountID,
+			&i.Transaction.SourceID,
+			&i.Transaction.SourceSide,
+			&i.Transaction.SourceReference,
+			&i.Transaction.PaymentReference,
+			&i.Transaction.TransactionDate,
+			&i.Transaction.AmountMinor,
+			&i.Transaction.Currency,
+			&i.Transaction.MinorDigits,
+			&i.Transaction.Description,
+			&i.FinancialAccount.ID,
+			&i.FinancialAccount.Code,
+			&i.FinancialAccount.Name,
+			&i.SourceName,
+			&i.PendingCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveMatchProposal = `-- name: ResolveMatchProposal :one
+UPDATE match_proposals
+SET status = $1,
+    resolved_at = coalesce((SELECT r.confirmed_at FROM reconciliations AS r WHERE r.id = $2), statement_timestamp()),
+    resolved_by = $3,
+    resolved_by_name = (SELECT u.display_name FROM users AS u WHERE u.id = $3),
+    reconciliation_id = $2
+WHERE match_proposals.id = $4 AND match_proposals.status = 'pending'
+RETURNING id, financial_account_id, internal_transaction_id, external_transaction_id, status, evidence, created_at, job_id, resolved_at, resolved_by, resolved_by_name, reconciliation_id
+`
+
+type ResolveMatchProposalParams struct {
+	Status           string
+	ReconciliationID pgtype.UUID
+	AnalystID        pgtype.UUID
+	ID               pgtype.UUID
+}
+
+func (q *Queries) ResolveMatchProposal(ctx context.Context, arg ResolveMatchProposalParams) (MatchProposal, error) {
+	row := q.db.QueryRow(ctx, resolveMatchProposal,
+		arg.Status,
+		arg.ReconciliationID,
+		arg.AnalystID,
+		arg.ID,
+	)
+	var i MatchProposal
+	err := row.Scan(
+		&i.ID,
+		&i.FinancialAccountID,
+		&i.InternalTransactionID,
+		&i.ExternalTransactionID,
+		&i.Status,
+		&i.Evidence,
+		&i.CreatedAt,
+		&i.JobID,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.ResolvedByName,
+		&i.ReconciliationID,
+	)
+	return i, err
 }

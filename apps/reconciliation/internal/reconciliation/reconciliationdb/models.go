@@ -14,6 +14,21 @@ type FinancialAccount struct {
 	Name string
 }
 
+type MatchProposal struct {
+	ID                    pgtype.UUID
+	FinancialAccountID    pgtype.UUID
+	InternalTransactionID pgtype.UUID
+	ExternalTransactionID pgtype.UUID
+	Status                string
+	Evidence              []byte
+	CreatedAt             pgtype.Timestamptz
+	JobID                 int64
+	ResolvedAt            pgtype.Timestamptz
+	ResolvedBy            pgtype.UUID
+	ResolvedByName        pgtype.Text
+	ReconciliationID      pgtype.UUID
+}
+
 type Reconciliation struct {
 	ID                 pgtype.UUID
 	FinancialAccountID pgtype.UUID

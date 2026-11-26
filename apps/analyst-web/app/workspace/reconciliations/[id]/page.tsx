@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { Button } from "@/components/ui/button";
 import type { ReconciliationDetail } from "@/lib/reconciliation";
 import { formatMoney, formatTimestamp, formatTransactionDate } from "@/lib/transaction-format";
@@ -10,10 +11,11 @@ import { readWorkspaceResource } from "@/lib/workspace-api";
 export default async function ReconciliationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const token = await getWorkspaceToken();
-  const [result, t, imports, locale] = await Promise.all([
+  const [result, t, imports, matches, locale] = await Promise.all([
     readWorkspaceResource<ReconciliationDetail>(`/api/reconciliations/${encodeURIComponent(id)}`, token),
     getTranslations("Reconciliation"),
     getTranslations("Imports"),
+    getTranslations("Review"),
     getLocale(),
   ]);
 
@@ -76,6 +78,15 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
               </section>
             ))}
           </div>
+
+          {result.proposal_evidence && result.match_proposal_id && (
+            <section className="mt-8 max-w-2xl">
+              <ProposalEvidence evidence={result.proposal_evidence} heading="h2" />
+              <Link className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary underline underline-offset-4 hover:text-primary-hover" href={`/workspace/match-proposals/${result.match_proposal_id}`}>
+                {matches("viewProposal")}
+              </Link>
+            </section>
+          )}
 
           {result.evidence && (
             <section aria-labelledby="recorded-evidence" className="mt-8 max-w-2xl">

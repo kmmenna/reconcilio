@@ -20,7 +20,9 @@ export type Reconciliation = {
 };
 
 export type ReconciliationDetail = Reconciliation & {
-  actor: { kind: "engine" } | { kind: "analyst"; user_id: string; display_name: string };
+  actor: DecisionActor;
+  match_proposal_id?: string;
+  proposal_evidence?: ProposalEvidence;
   members: Transaction[];
   evidence?: {
     payment_reference: string;
@@ -42,3 +44,36 @@ export type Transaction = {
   currency: string;
   description: string;
 };
+
+export type DecisionActor = { kind: "engine" } | { kind: "analyst"; user_id: string; display_name: string };
+
+export type ProposalEvidence = {
+  reference_relation: "missing" | "different" | "shared";
+  days_apart: number;
+  internal_reference_count?: number;
+  external_reference_count?: number;
+  amount: string;
+  currency: string;
+};
+
+export type ProposalResolution = {
+  status: "pending" | "accepted" | "rejected" | "invalidated";
+  resolved_at?: string;
+  actor?: DecisionActor;
+  reconciliation_id?: string;
+};
+
+export type MatchProposal = ProposalResolution & {
+  id: string;
+  external_transaction: Transaction;
+  evidence: ProposalEvidence;
+  created_at: string;
+};
+
+export type ReviewTransaction = {
+  financial_account: FinancialAccount;
+  internal_transaction: Transaction;
+};
+export type ReviewQueueEntry = ReviewTransaction & { pending_count: number };
+export type ReviewGroup = ReviewTransaction & { proposals: MatchProposal[] };
+export type MatchProposalDetail = ReviewTransaction & MatchProposal;

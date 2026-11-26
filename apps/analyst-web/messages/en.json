@@ -54,6 +54,10 @@
     "unavailable": "Your account details could not be loaded. Reload the page and try again."
   },
   "Errors": {
+    "match_proposal_conflict": "This proposal changed. The remaining alternatives have been refreshed.",
+    "match_proposal_not_found": "The Match Proposal could not be found.",
+    "invalid_ranking_evaluation": "The ranking evaluation does not cover this proposal.",
+    "review_unavailable": "The decision could not be saved. Try again.",
     "invalid_origin": "This request must come from the Reconcilio workspace.",
     "invalid_content_type": "Reload the page and try again.",
     "invalid_sign_in": "Enter a valid username and password.",
