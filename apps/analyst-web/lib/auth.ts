@@ -1,8 +1,10 @@
 import "server-only";
 
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { webOrigin } from "@/lib/bff";
+import { correlationIDHeader, requestIDHeader } from "@/lib/correlation";
 
 export const sessionCookie = "reconcilio_session";
 
@@ -21,10 +23,19 @@ export function changeSession(token: string, maxAge: number) {
   return response;
 }
 
-export function requestAPI(path: string, init: RequestInit = {}) {
+export async function readWorkflowID() {
+  return (await headers()).get(correlationIDHeader) ?? crypto.randomUUID();
+}
+
+export async function requestAPI(path: string, init: RequestInit = {}) {
+  const incoming = await headers();
+  const upstream = new Headers(init.headers);
+  upstream.set(requestIDHeader, incoming.get(requestIDHeader) ?? crypto.randomUUID());
+  upstream.set(correlationIDHeader, incoming.get(correlationIDHeader) ?? crypto.randomUUID());
   const apiOrigin = process.env.GO_API_ORIGIN ?? "http://localhost:8080";
   return fetch(new URL(path, apiOrigin), {
     ...init,
+    headers: upstream,
     cache: "no-store",
     signal: AbortSignal.timeout(5000),
   });

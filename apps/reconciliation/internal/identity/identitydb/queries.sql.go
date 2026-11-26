@@ -23,6 +23,38 @@ func (q *Queries) CreateBootstrapAdmin(ctx context.Context, passwordHash string)
 	return id, err
 }
 
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (username, display_name, password_hash)
+VALUES ($1, $2, $3)
+ON CONFLICT (username) DO NOTHING
+RETURNING id::text AS id, username, display_name, is_admin
+`
+
+type CreateUserParams struct {
+	Username     string
+	DisplayName  string
+	PasswordHash string
+}
+
+type CreateUserRow struct {
+	ID          string
+	Username    string
+	DisplayName string
+	IsAdmin     bool
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
+	row := q.db.QueryRow(ctx, createUser, arg.Username, arg.DisplayName, arg.PasswordHash)
+	var i CreateUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.IsAdmin,
+	)
+	return i, err
+}
+
 const findCredentials = `-- name: FindCredentials :one
 SELECT id::text AS id, password_hash
 FROM users
@@ -41,6 +73,19 @@ func (q *Queries) FindCredentials(ctx context.Context, username string) (FindCre
 	return i, err
 }
 
+const findPasswordHash = `-- name: FindPasswordHash :one
+SELECT password_hash
+FROM users
+WHERE id = $1::text::uuid
+`
+
+func (q *Queries) FindPasswordHash(ctx context.Context, dollar_1 string) (string, error) {
+	row := q.db.QueryRow(ctx, findPasswordHash, dollar_1)
+	var password_hash string
+	err := row.Scan(&password_hash)
+	return password_hash, err
+}
+
 const findProfile = `-- name: FindProfile :one
 SELECT id::text AS id, username, display_name, is_admin
 FROM users
@@ -57,6 +102,57 @@ type FindProfileRow struct {
 func (q *Queries) FindProfile(ctx context.Context, dollar_1 string) (FindProfileRow, error) {
 	row := q.db.QueryRow(ctx, findProfile, dollar_1)
 	var i FindProfileRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.DisplayName,
+		&i.IsAdmin,
+	)
+	return i, err
+}
+
+const replacePasswordHash = `-- name: ReplacePasswordHash :execrows
+UPDATE users
+SET password_hash = $1
+WHERE id = $2::text::uuid AND password_hash = $3
+`
+
+type ReplacePasswordHashParams struct {
+	NewHash     string
+	ID          string
+	CurrentHash string
+}
+
+func (q *Queries) ReplacePasswordHash(ctx context.Context, arg ReplacePasswordHashParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replacePasswordHash, arg.NewHash, arg.ID, arg.CurrentHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateDisplayName = `-- name: UpdateDisplayName :one
+UPDATE users
+SET display_name = $1
+WHERE id = $2::text::uuid
+RETURNING id::text AS id, username, display_name, is_admin
+`
+
+type UpdateDisplayNameParams struct {
+	DisplayName string
+	ID          string
+}
+
+type UpdateDisplayNameRow struct {
+	ID          string
+	Username    string
+	DisplayName string
+	IsAdmin     bool
+}
+
+func (q *Queries) UpdateDisplayName(ctx context.Context, arg UpdateDisplayNameParams) (UpdateDisplayNameRow, error) {
+	row := q.db.QueryRow(ctx, updateDisplayName, arg.DisplayName, arg.ID)
+	var i UpdateDisplayNameRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,

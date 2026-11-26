@@ -1,0 +1,57 @@
+{
+  "title": "Review queue",
+  "backToWorkspace": "Back to workspace",
+  "backToQueue": "Back to review queue",
+  "backToGroup": "Back to alternatives",
+  "empty": "No Match Proposals are waiting for review.",
+  "unavailable": "Review could not be loaded. Refresh the page to try again.",
+  "groupNotFound": "The internal Transaction could not be found.",
+  "proposalNotFound": "The Match Proposal could not be found.",
+  "groupTitle": "Compare Match Proposals",
+  "groupEmpty": "No pending alternatives remain for this Transaction.",
+  "alternatives": "{count, plural, one {# pending alternative} other {# pending alternatives}}",
+  "compare": "Compare alternatives",
+  "proposalTitle": "Match Proposal",
+  "internal": "Internal Transaction",
+  "external": "External Transaction",
+  "alternative": "External alternative",
+  "viewProposal": "View proposal",
+  "confirm": "Confirm match",
+  "reject": "Reject proposal",
+  "saving": "Saving decision…",
+  "recorded": "Proposed at",
+  "resolved": "Resolved at",
+  "actor": "Resolved by",
+  "engine": "Matching engine",
+  "viewReconciliation": "View reconciliation",
+  "states": {
+    "pending": "Pending",
+    "accepted": "Accepted",
+    "rejected": "Rejected",
+    "invalidated": "Invalidated"
+  },
+  "outcomes": {
+    "pending": "This proposal is waiting for an analyst decision.",
+    "accepted": "These Transactions were reconciled.",
+    "rejected": "This pair was rejected.",
+    "invalidated": "A competing Reconciliation resolved one of these Transactions."
+  },
+  "ranking": {
+    "title": "AI assessment",
+    "recordedTitle": "Recorded AI assessment",
+    "summary": "Rank {rank, number} · Score {score, number}/100"
+  },
+  "evidence": {
+    "title": "Original Match Evidence",
+    "reference": "Payment Reference comparison",
+    "referenceCounts": "Internal {internal, number} · External {external, number}",
+    "relations": {
+      "missing": "Missing on one or both sides",
+      "different": "Different references",
+      "shared": "Shared reference with multiple occurrences"
+    },
+    "dateDifference": "Date difference",
+    "daysApart": "{count, plural, =0 {Same date} one {# day} other {# days}}",
+    "matchedAmount": "Equal signed amount"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "title": "Conciliações",
+  "filter": "Conta financeira",
+  "allAccounts": "Todas as contas financeiras",
+  "applyFilter": "Aplicar filtro",
+  "reprocess": {
+    "action": "Reprocessar conta",
+    "queueing": "Adicionando à fila…",
+    "unavailable": "Não foi possível agendar o reprocessamento. Tente novamente.",
+    "notFound": "A conta financeira não foi encontrada. Atualize a página para recarregar a lista."
+  },
+  "amount": "Valor",
+  "completedAt": "Confirmada em",
+  "method": "Método de decisão",
+  "methods": { "automatic": "Automática", "manual": "Manual" },
+  "empty": "Nenhuma conciliação confirmada para esta seleção.",
+  "unavailable": "Não foi possível carregar as conciliações. Atualize a página para tentar novamente.",
+  "detailTitle": "Detalhes da conciliação",
+  "openDetail": "Ver detalhes",
+  "backToList": "Ver conciliações",
+  "detailNotFound": "A conciliação não foi encontrada.",
+  "decisionActor": "Confirmada por",
+  "engine": "Motor de conciliação",
+  "evidence": {
+    "title": "Evidências registradas",
+    "description": "As duas transações tinham o mesmo valor, com o mesmo sinal e a mesma moeda. A referência de pagamento em comum aparecia uma vez de cada lado quando a decisão foi registrada.",
+    "referenceCounts": "Interno {internal, number} · Externo {external, number}"
+  },
+  "jobs": {
+    "title": "Processamento da conciliação",
+    "completedAt": "Concluído em",
+    "attempt": "Tentativa {attempt, number} de {max, number}",
+    "result": "{count, plural, =0 {Nenhuma conciliação automática} one {# conciliação automática} other {# conciliações automáticas}}",
+    "proposals": "{count, plural, =0 {Nenhuma nova proposta de conciliação} one {# nova proposta de conciliação} other {# novas propostas de conciliação}}",
+    "partialResults": "Resultados salvos antes da falha no processamento",
+    "notFound": "O processamento não foi encontrado.",
+    "unavailable": "O status do processamento está temporariamente indisponível. Atualize a página para tentar novamente.",
+    "pollUnavailable": "O status mais recente está indisponível. Tentando novamente…",
+    "status": {
+      "queued": "Na fila",
+      "deferred": "Aguardando a liberação da conta",
+      "running": "Em processamento",
+      "retrying": "Aguardando nova tentativa",
+      "completed": "Concluído",
+      "failed": "Falhou",
+      "cancelled": "Cancelado"
+    }
+  }
+}

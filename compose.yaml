@@ -31,6 +31,13 @@ services:
     environment:
       <<: *go-env
       JWT_SECRET: ${JWT_SECRET:-}
+      RECONCILIO_TRACE_STDOUT: ${RECONCILIO_TRACE_STDOUT:-false}
+      RECONCILIO_METRIC_STDOUT: ${RECONCILIO_METRIC_STDOUT:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_RESPONSES_URL: ${OPENAI_RESPONSES_URL:-}
+      RECONCILIO_AI_PER_JOB_LIMIT: ${RECONCILIO_AI_PER_JOB_LIMIT:-5}
+      RECONCILIO_AI_DAILY_LIMIT: ${RECONCILIO_AI_DAILY_LIMIT:-50}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -5,17 +5,26 @@ project="reconcilio-smoke-$$"
 export ANALYST_WEB_PORT="${RECONCILIO_SMOKE_PORT:-3100}"
 export WEB_ORIGIN="http://localhost:$ANALYST_WEB_PORT"
 export RECONCILIO_SMOKE_ORIGIN="$WEB_ORIGIN"
+unset OPENAI_API_KEY OPENAI_MODEL OPENAI_RESPONSES_URL
+
+compose() {
+  if [ "${RECONCILIO_SMOKE_RANKING:-false}" = true ]; then
+    docker compose -p "$project" -f compose.yaml -f scripts/smoke-ranking.compose.yaml "$@"
+  else
+    docker compose -p "$project" "$@"
+  fi
+}
 
 cleanup() {
-  docker compose -p "$project" down --volumes
+  compose down --volumes
 }
 trap cleanup EXIT
 
-if ! docker compose -p "$project" up --build -d --wait; then
-  docker compose -p "$project" logs --tail 30
+if ! compose up --build -d --wait; then
+  compose logs --tail 30
   exit 1
 fi
-bootstrap=$(docker compose -p "$project" exec -T backend reconcilio bootstrap-admin)
+bootstrap=$(compose exec -T backend reconcilio bootstrap-admin)
 RECONCILIO_SMOKE_PASSWORD=$(printf '%s\n' "$bootstrap" | sed -n 's/^Generated password: //p')
 if [ -z "$RECONCILIO_SMOKE_PASSWORD" ]; then
   printf '%s\n' "The smoke instance did not return its initial administrator password." >&2
@@ -23,4 +32,10 @@ if [ -z "$RECONCILIO_SMOKE_PASSWORD" ]; then
 fi
 export RECONCILIO_SMOKE_PASSWORD
 
-npm --prefix apps/analyst-web run smoke
+if [ "${RECONCILIO_SMOKE_RANKING:-false}" = true ]; then
+  RECONCILIO_SMOKE_RANKING_URL="http://$(compose port ranking-provider 4010)"
+  export RECONCILIO_SMOKE_RANKING_URL
+  npm --prefix apps/analyst-web run smoke -- e2e/bilingual-ranking.spec.ts
+else
+  npm --prefix apps/analyst-web run smoke
+fi

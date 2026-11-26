@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useId, useOptimistic, useState, useTransition } from "react";
@@ -24,7 +25,7 @@ export function LanguageSelector({ preference }: { preference: LanguagePreferenc
     startTransition(async () => {
       setSelected(locale);
       try {
-        const response = await fetch("/api/preferences/language", {
+        const response = await correlatedFetch("/api/preferences/language", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ locale }),

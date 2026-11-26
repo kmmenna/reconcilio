@@ -1,0 +1,4 @@
+source_reference,payment_reference,transaction_date,amount,currency,description
+ERP-001,DEMO-PAY-001,2026-11-16,-89.90,BRL,Cloud hosting subscription
+ERP-002,,2026-11-18,-250.00,BRL,Canva subscription for the design team
+ERP-003,DEMO-PAY-003,2026-11-20,-120.00,BRL,Office supplies order

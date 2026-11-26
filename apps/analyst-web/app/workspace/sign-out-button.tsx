@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -18,7 +19,7 @@ export function SignOutButton() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/auth/logout", { method: "POST" });
+      const response = await correlatedFetch("/api/auth/logout", { method: "POST" });
       if (response.ok) {
         router.replace("/login");
         router.refresh();

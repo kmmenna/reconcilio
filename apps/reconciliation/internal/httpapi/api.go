@@ -11,7 +11,17 @@ import (
 // Problem describes an HTTP failure with a machine-readable code.
 type Problem struct {
 	huma.ErrorModel
-	Code string `json:"code"`
+	Code    string  `json:"code"`
+	Issues  []Issue `json:"issues,omitempty"`
+	Context any     `json:"context,omitempty"`
+}
+
+// Issue identifies a failed input field and, for CSV data, its physical line.
+type Issue struct {
+	Line   int    `json:"line,omitzero" minimum:"1"`
+	Field  string `json:"field"`
+	Reason string `json:"reason"`
+	Value  string `json:"value,omitempty"`
 }
 
 func NewProblem(status int, code, detail string) *Problem {
