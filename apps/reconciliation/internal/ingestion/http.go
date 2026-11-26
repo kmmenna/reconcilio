@@ -21,8 +21,8 @@ import (
 type importForm struct {
 	SourceID           string        `form:"source_id" format:"uuid"`
 	FinancialAccountID string        `form:"financial_account_id" format:"uuid" required:"false" doc:"Omit when the CSV specifies a financial_account code on each row."`
-	PeriodStart        string        `form:"period_start" format:"date"`
-	PeriodEnd          string        `form:"period_end" format:"date"`
+	PeriodStart        string        `form:"period_start" format:"date" required:"false" doc:"Supply both period bounds to declare coverage. Omit both to infer coverage from the CSV."`
+	PeriodEnd          string        `form:"period_end" format:"date" required:"false" doc:"Supply both period bounds to declare coverage. Omit both to infer coverage from the CSV."`
 	File               huma.FormFile `form:"file" contentType:"text/plain"`
 }
 
@@ -82,7 +82,12 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		}
 		input := previewRequest{
 			sourceID: form.SourceID, financialAccountID: form.FinancialAccountID,
-			periodStart: form.PeriodStart, periodEnd: form.PeriodEnd,
+		}
+		if _, supplied := in.RawBody.Form.Value["period_start"]; supplied {
+			input.periodStart = &form.PeriodStart
+		}
+		if _, supplied := in.RawBody.Form.Value["period_end"]; supplied {
+			input.periodEnd = &form.PeriodEnd
 		}
 		if form.File.IsSet {
 			data, err := io.ReadAll(form.File)

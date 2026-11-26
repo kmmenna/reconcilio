@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,12 +44,12 @@ func parseDate(value string) (time.Time, bool) {
 	return date, err == nil && len(value) == len(time.DateOnly) && date.Year() > 0
 }
 
-func validatePreviewRows(file *decodedUpload, start, end time.Time, accountsByCode map[string]string) ([]stagedRow, []httpapi.Issue) {
+func validatePreviewRows(file *decodedUpload, period coveragePeriod, accountsByCode map[string]string) ([]stagedRow, []httpapi.Issue) {
 	var rows []stagedRow
 	issues := slices.Clone(file.issues)
 	for _, raw := range file.rows {
 		before := len(issues)
-		if reason := dateIssue(raw.transactionDate, start, end); reason != "" {
+		if reason := dateIssue(raw.transactionDate, period); reason != "" {
 			issues = append(issues, rowIssue(raw.line, "transaction_date", reason))
 		}
 
@@ -100,21 +101,44 @@ func rowIssue(line int, field, reason string) httpapi.Issue {
 	return httpapi.Issue{Line: line, Field: field, Reason: reason}
 }
 
-func dateIssue(value string, start, end time.Time) string {
+func dateIssue(value string, period coveragePeriod) string {
 	date, valid := parseDate(value)
 	if !valid {
 		return "invalid_date"
 	}
-	if date.Before(start) || date.After(end) {
+	if period.start.Valid && (date.Before(period.start.Time) || date.After(period.end.Time)) {
 		return "outside_period"
 	}
 	return ""
 }
 
-func coverageDateIssues(rows []stagedRow, start, end time.Time) []httpapi.Issue {
+func assignRowAccounts(rows []stagedRow, accounts []importAccount) error {
+	assigned := make(map[string]struct{}, len(accounts))
+	for _, account := range accounts {
+		assigned[account.entry.ID] = struct{}{}
+	}
+	for i := range rows {
+		row := &rows[i]
+		// Legacy previews and CSVs with a selected account can omit the row assignment.
+		if row.FinancialAccountID == "" && len(accounts) == 1 {
+			row.FinancialAccountID = accounts[0].entry.ID
+		}
+		if _, ok := assigned[row.FinancialAccountID]; !ok {
+			return fmt.Errorf("row %d refers to unassigned Financial Account %q", row.Line, row.FinancialAccountID)
+		}
+	}
+	return nil
+}
+
+func coverageDateIssues(rows []stagedRow, accounts []importAccount) []httpapi.Issue {
+	periods := make(map[string]coveragePeriod, len(accounts))
+	for _, account := range accounts {
+		periods[account.entry.ID] = account.coverage
+	}
 	var issues []httpapi.Issue
 	for _, row := range rows {
-		if reason := dateIssue(row.TransactionDate, start, end); reason != "" {
+		period := periods[row.FinancialAccountID]
+		if reason := dateIssue(row.TransactionDate, period); reason != "" {
 			issues = append(issues, rowIssue(row.Line, "transaction_date", reason))
 			if len(issues) >= maxRowIssues {
 				break

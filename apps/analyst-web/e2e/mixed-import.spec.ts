@@ -47,14 +47,13 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   const codeHelp = page.getByText("Use a registered Financial Account code", { exact: false });
   const source = page.getByRole("combobox", { name: "Source", exact: true });
   await expect(source).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(page.getByLabel("Start date", { exact: true })).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.getByLabel("Start date", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("End date", { exact: true })).toHaveCount(0);
   await expect(codeHelp).toHaveCount(0);
   await selectFormOption(source, "Sistema da Matriz");
   await selectFormOption(page.getByRole("combobox", { name: "Financial Account", exact: true }), "Use account codes from CSV");
   await expect(codeHelp).toBeVisible();
   expect(await fileInput.evaluate((input) => Boolean(input.compareDocumentPosition(document.getElementById("csv-account-help")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
-  await page.getByLabel("Start date", { exact: true }).fill("11/1/2026");
-  await page.getByLabel("End date", { exact: true }).fill("11/5/2026");
   const file = (code: string) => ({
     name: "mixed.csv",
     mimeType: "text/csv",
@@ -97,6 +96,9 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await expect(page.getByText("Sistema da Matriz", { exact: true })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Lançamento externo" })).toContainText("corporate-card");
   await expect(page.getByRole("row").filter({ hasText: "Recebimento" })).toContainText("operating-bank");
+  const coverage = page.getByRole("region", { name: "Import Coverage" });
+  await expect(coverage.getByRole("listitem").filter({ hasText: "Corporate Card" })).toContainText("Nov 2, 2026");
+  await expect(coverage.getByRole("listitem").filter({ hasText: "Conta Principal" })).toContainText("Nov 3, 2026");
   const originalURL = page.url();
 
   await page.goto(`${origin}/workspace/catalog`);
@@ -122,9 +124,13 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await expect(page.getByRole("heading", { name: "Prévia da importação" })).toBeVisible();
   await expect(page.getByText("Externo", { exact: true })).toBeVisible();
   await expect(page.getByText("-R$ 89,90", { exact: true })).toBeVisible();
-  await expect(page.getByText("2 de nov. de 2026", { exact: true })).toBeVisible();
+  const localizedCoverage = page.getByRole("region", { name: "Cobertura da importação" });
+  await expect(localizedCoverage.getByRole("listitem").filter({ hasText: "Corporate Card" })).toContainText("2 de nov. de 2026");
+  await expect(localizedCoverage.getByRole("listitem").filter({ hasText: "Conta Principal" })).toContainText("3 de nov. de 2026");
   await page.getByRole("button", { name: "Confirmar importação" }).click();
   await expect(page.getByRole("heading", { name: "Importação confirmada" })).toBeVisible();
+  await expect(localizedCoverage.getByRole("listitem").filter({ hasText: "Corporate Card" })).toContainText("2 de nov. de 2026");
+  await expect(localizedCoverage.getByRole("listitem").filter({ hasText: "Conta Principal" })).toContainText("3 de nov. de 2026");
   const jobs = page.getByRole("link", { name: "Acompanhar processamento" });
   await expect(jobs).toHaveCount(2);
   expect(await jobs.first().getAttribute("href")).not.toBe(await jobs.last().getAttribute("href"));

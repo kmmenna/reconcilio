@@ -39,6 +39,7 @@ type importView struct {
 	Source            catalog.Source             `json:"source"`
 	FinancialAccount  *catalog.FinancialAccount  `json:"financial_account,omitempty"`
 	FinancialAccounts []catalog.FinancialAccount `json:"financial_accounts,omitempty"`
+	AccountCoverage   []accountCoverage          `json:"account_coverage,omitempty"`
 	PeriodStart       string                     `json:"period_start" format:"date"`
 	PeriodEnd         string                     `json:"period_end" format:"date"`
 	Rows              []previewRow               `json:"rows,omitempty"`
@@ -53,8 +54,9 @@ type importView struct {
 }
 
 type importAccount struct {
-	id    pgtype.UUID
-	entry catalog.FinancialAccount
+	id       pgtype.UUID
+	entry    catalog.FinancialAccount
+	coverage coveragePeriod
 }
 
 type assessedAccount struct {
@@ -76,8 +78,8 @@ func New(pool *pgxpool.Pool, entries *catalog.Service, jobs jobEnqueuer) *Servic
 type previewRequest struct {
 	sourceID           string
 	financialAccountID string
-	periodStart        string
-	periodEnd          string
+	periodStart        *string
+	periodEnd          *string
 	file               *decodedUpload
 }
 
@@ -124,7 +126,8 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, input p
 		}
 	}
 
-	rows, issues := validatePreviewRows(input.file, params.PeriodStart.Time, params.PeriodEnd.Time, accountsByCode)
+	period := coveragePeriod{start: params.PeriodStart, end: params.PeriodEnd}
+	rows, issues := validatePreviewRows(input.file, period, accountsByCode)
 	if len(issues) > 0 {
 		return importView{}, importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
 	}
@@ -135,6 +138,11 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, input p
 			return importView{}, err
 		}
 	}
+	if err := assignRowAccounts(rows, accounts); err != nil {
+		return importView{}, err
+	}
+	period = assignCoverage(accounts, rows, period)
+	params.PeriodStart, params.PeriodEnd = period.start, period.end
 	params.FileFingerprint = input.file.fingerprint[:]
 	params.CreatedBy = userID
 	return s.savePreview(ctx, params, accounts, rows)
@@ -154,24 +162,30 @@ func importSelections(input previewRequest) (ingestiondb.CreatePendingImportPara
 	if input.financialAccountID != "" && accountErr != nil {
 		add("financial_account_id", "invalid_financial_account")
 	}
-	start, validStart := parseDate(input.periodStart)
-	if !validStart {
-		add("period_start", "invalid_date")
-	}
-	end, validEnd := parseDate(input.periodEnd)
-	if !validEnd {
-		add("period_end", "invalid_date")
-	}
-	if validStart && validEnd && end.Before(start) {
-		add("period_end", "invalid_period")
+	var start, end pgtype.Date
+	if input.periodStart != nil || input.periodEnd != nil {
+		parseEndpoint := func(field string, input *string) pgtype.Date {
+			if input != nil {
+				if date, valid := parseDate(*input); valid {
+					return pgtype.Date{Time: date, Valid: true}
+				}
+			}
+			add(field, "invalid_date")
+			return pgtype.Date{}
+		}
+		start = parseEndpoint("period_start", input.periodStart)
+		end = parseEndpoint("period_end", input.periodEnd)
+		if start.Valid && end.Valid && end.Time.Before(start.Time) {
+			add("period_end", "invalid_period")
+		}
 	}
 	if input.file == nil {
 		add("file", "missing_file")
 	}
 	return ingestiondb.CreatePendingImportParams{
 		SourceID:    pgtype.UUID{Bytes: source, Valid: sourceErr == nil},
-		PeriodStart: pgtype.Date{Time: start, Valid: validStart},
-		PeriodEnd:   pgtype.Date{Time: end, Valid: validEnd},
+		PeriodStart: start,
+		PeriodEnd:   end,
 	}, pgtype.UUID{Bytes: account, Valid: accountErr == nil}, issues
 }
 
@@ -217,11 +231,11 @@ func (s *Service) refreshPreview(ctx context.Context, id, analystID pgtype.UUID)
 		if err != nil {
 			return err
 		}
-		document, err := decodePreview(record.Preview)
+		document, err := decodePreview(record.Preview, accounts)
 		if err != nil {
 			return err
 		}
-		if issues := coverageDateIssues(document.Rows, record.PeriodStart.Time, record.PeriodEnd.Time); len(issues) > 0 {
+		if issues := coverageDateIssues(document.Rows, accounts); len(issues) > 0 {
 			return importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
 		}
 		replay, err := findReplay(ctx, queries, record.SourceID, accountIDs(accounts), record.FileFingerprint)
@@ -240,7 +254,7 @@ func (s *Service) refreshPreview(ctx context.Context, id, analystID pgtype.UUID)
 func stagePreview(ctx context.Context, queries *ingestiondb.Queries, params ingestiondb.CreatePendingImportParams, source catalog.Source, accounts []importAccount, rows []stagedRow, exactReplay bool) (importView, error) {
 	document := previewDocument{Rows: rows}
 	if !exactReplay {
-		_, conflicts, err := assessImport(ctx, queries, params.SourceID, params.PeriodStart, params.PeriodEnd, accounts, rows)
+		_, conflicts, err := assessImport(ctx, queries, params.SourceID, accounts, rows)
 		if err != nil {
 			return importView{}, err
 		}
@@ -256,20 +270,23 @@ func stagePreview(ctx context.Context, queries *ingestiondb.Queries, params inge
 	if err != nil {
 		return importView{}, err
 	}
-	if err := queries.AssignImportAccounts(ctx, ingestiondb.AssignImportAccountsParams{
-		ImportID: id, AccountIds: accountIDs(accounts),
-	}); err != nil {
+	assignments := make([]ingestiondb.AssignImportAccountsParams, 0, len(accounts))
+	for _, account := range accounts {
+		assignments = append(assignments, ingestiondb.AssignImportAccountsParams{
+			ImportID: id, FinancialAccountID: account.id,
+			PeriodStart: account.coverage.start, PeriodEnd: account.coverage.end, CoverageBasis: account.coverage.basis,
+		})
+	}
+	if _, err := queries.AssignImportAccounts(ctx, assignments); err != nil {
 		return importView{}, fmt.Errorf("assign Financial Accounts to import: %w", err)
 	}
 	return presentPreview(id, source, accounts, params.PeriodStart, params.PeriodEnd, document), nil
 }
 
-func assessImport(ctx context.Context, queries *ingestiondb.Queries, sourceID pgtype.UUID, start, end pgtype.Date, accounts []importAccount, rows []stagedRow) ([]assessedAccount, []importConflict, error) {
+func assessImport(ctx context.Context, queries *ingestiondb.Queries, sourceID pgtype.UUID, accounts []importAccount, rows []stagedRow) ([]assessedAccount, []importConflict, error) {
 	grouped := make(map[string][]stagedRow, len(accounts))
 	for _, row := range rows {
-		// Pre-assignment previews only need the single account backfilled by the migration.
-		accountID := cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)
-		grouped[accountID] = append(grouped[accountID], row)
+		grouped[row.FinancialAccountID] = append(grouped[row.FinancialAccountID], row)
 	}
 	assessments := make([]assessedAccount, 0, len(accounts))
 	var conflicts []importConflict
@@ -292,7 +309,7 @@ func assessImport(ctx context.Context, queries *ingestiondb.Queries, sourceID pg
 	}
 	for _, assessment := range assessments {
 		if err := checkCoverage(ctx, queries, ingestiondb.FindBlockedCoverageParams{
-			SourceID: sourceID, FinancialAccountID: assessment.id, IncomingStart: start, IncomingEnd: end,
+			SourceID: sourceID, FinancialAccountID: assessment.id, IncomingStart: assessment.coverage.start, IncomingEnd: assessment.coverage.end,
 			IncomingHasSourceReferences: assessment.AllHaveSourceReferences,
 		}, assessment.entry); err != nil {
 			return nil, nil, err
@@ -314,7 +331,7 @@ func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (importView, e
 	if err != nil {
 		return importView{}, err
 	}
-	document, err := decodePreview(record.Preview)
+	document, err := decodePreview(record.Preview, accounts)
 	if err != nil {
 		return importView{}, err
 	}
@@ -347,9 +364,11 @@ func listImportAccounts(ctx context.Context, queries *ingestiondb.Queries, id pg
 	}
 	accounts := make([]importAccount, 0, len(entries))
 	for _, entry := range entries {
-		accounts = append(accounts, importAccount{id: entry.ID, entry: catalog.FinancialAccount{
-			ID: entry.ID.String(), Code: entry.Code, Name: entry.Name,
-		}})
+		accounts = append(accounts, importAccount{
+			id:       entry.ID,
+			entry:    catalog.FinancialAccount{ID: entry.ID.String(), Code: entry.Code, Name: entry.Name},
+			coverage: coveragePeriod{start: entry.PeriodStart, end: entry.PeriodEnd, basis: entry.CoverageBasis},
+		})
 	}
 	return accounts, nil
 }
@@ -403,10 +422,13 @@ func readReceipt(data []byte) (importView, error) {
 	return receipt, nil
 }
 
-func decodePreview(data []byte) (previewDocument, error) {
+func decodePreview(data []byte, accounts []importAccount) (previewDocument, error) {
 	var document previewDocument
 	if err := json.Unmarshal(data, &document); err != nil {
 		return previewDocument{}, fmt.Errorf("decode preview rows: %w", err)
+	}
+	if err := assignRowAccounts(document.Rows, accounts); err != nil {
+		return previewDocument{}, err
 	}
 	return document, nil
 }
@@ -418,6 +440,12 @@ func newImportView(id pgtype.UUID, source catalog.Source, accounts []importAccou
 	}
 	for _, account := range accounts {
 		view.FinancialAccounts = append(view.FinancialAccounts, account.entry)
+		view.AccountCoverage = append(view.AccountCoverage, accountCoverage{
+			FinancialAccountID: account.entry.ID,
+			PeriodStart:        account.coverage.start.Time.Format(time.DateOnly),
+			PeriodEnd:          account.coverage.end.Time.Format(time.DateOnly),
+			Basis:              account.coverage.basis,
+		})
 	}
 	if len(accounts) == 1 {
 		view.FinancialAccount = new(accounts[0].entry)
@@ -431,7 +459,6 @@ func presentPreview(id pgtype.UUID, source catalog.Source, accounts []importAcco
 	view.Conflicts = document.Conflicts
 	view.Rows = make([]previewRow, 0, len(document.Rows))
 	for _, row := range document.Rows {
-		row.FinancialAccountID = cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)
 		view.Rows = append(view.Rows, previewRow{
 			rowFields: row.rowFields,
 			Amount:    row.decimalAmount(),

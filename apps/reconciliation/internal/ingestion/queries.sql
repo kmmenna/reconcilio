@@ -5,14 +5,18 @@ INSERT INTO imports (
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id;
 
--- name: AssignImportAccounts :exec
-INSERT INTO import_financial_accounts (import_id, financial_account_id)
-SELECT sqlc.arg(import_id)::uuid, unnest(sqlc.arg(account_ids)::uuid[]);
+-- name: AssignImportAccounts :copyfrom
+INSERT INTO import_financial_accounts (import_id, financial_account_id, period_start, period_end, coverage_basis)
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: ListImportAccounts :many
-SELECT a.id, a.code, a.name
+SELECT a.id, a.code, a.name,
+       COALESCE(ia.period_start, i.period_start)::date AS period_start,
+       COALESCE(ia.period_end, i.period_end)::date AS period_end,
+       ia.coverage_basis
 FROM import_financial_accounts ia
 JOIN financial_accounts a ON a.id = ia.financial_account_id
+JOIN imports i ON i.id = ia.import_id
 WHERE ia.import_id = $1
 ORDER BY a.id;
 

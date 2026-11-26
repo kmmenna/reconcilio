@@ -48,7 +48,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 
 		source := catalog.Source{ID: record.SourceID.String(), Name: record.SourceName, Side: record.SourceSide}
 		receipt = newImportView(id, source, accounts, record.PeriodStart, record.PeriodEnd)
-		document, err := decodePreview(record.Preview)
+		document, err := decodePreview(record.Preview, accounts)
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			return queries.ResolveImportReplay(ctx, ingestiondb.ResolveImportReplayParams{ID: id, OriginalID: replay.ID})
 		}
 
-		assessments, conflicts, err := assessImport(ctx, queries, record.SourceID, record.PeriodStart, record.PeriodEnd, accounts, document.Rows)
+		assessments, conflicts, err := assessImport(ctx, queries, record.SourceID, accounts, document.Rows)
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			}
 			if err := queries.InsertImportCoverage(ctx, ingestiondb.InsertImportCoverageParams{
 				ImportID: id, FinancialAccountID: assessment.id, SourceID: record.SourceID,
-				PeriodStart: record.PeriodStart, PeriodEnd: record.PeriodEnd,
+				PeriodStart: assessment.coverage.start, PeriodEnd: assessment.coverage.end,
 				AllHaveSourceReferences: assessment.AllHaveSourceReferences, JobID: jobID,
 			}); err != nil {
 				return fmt.Errorf("record import coverage: %w", err)

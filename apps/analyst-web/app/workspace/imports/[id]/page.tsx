@@ -29,7 +29,11 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
   const date = (value: string) => formatTransactionDate(value, locale);
   const accounts = preview?.financial_accounts ?? (preview?.financial_account ? [preview.financial_account] : []);
   const mixed = accounts.length > 1;
-  const codes = new Map(accounts.map(({ id, code }) => [id, code]));
+  const accountsByID = new Map(accounts.map((account) => [account.id, account]));
+  const coverage = preview?.account_coverage?.map((period) => {
+    const account = accountsByID.get(period.financial_account_id);
+    return { ...period, key: period.financial_account_id, accounts: account ? [account] : [] };
+  }) ?? (preview ? [{ key: preview.id, accounts, period_start: preview.period_start, period_end: preview.period_end }] : []);
   const columns = [
     "transaction_date", "description", "amount", ...(mixed ? ["financial_account"] as const : []), "source_reference", "payment_reference",
   ] as const;
@@ -57,25 +61,43 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                 {t("pending")}
               </p>
             )}
-            <dl className="grid grid-cols-2 gap-x-5 gap-y-4 desktop:grid-cols-5">
-              {([
-                { field: "source_id", value: preview.source.name },
-                { field: "source_side", value: <SourceSideLabel side={preview.source.side}>{t(`sides.${preview.source.side}`)}</SourceSideLabel> },
-                { field: "financial_account_id", value: accounts.map((account) => (
-                  <div key={account.id}>
-                    <span>{account.name}</span>
-                    <span className="block font-mono text-xs font-normal text-muted-foreground">{account.code}</span>
-                  </div>
-                )) },
-                { field: "period_start", value: <time dateTime={preview.period_start}>{date(preview.period_start)}</time> },
-                { field: "period_end", value: <time dateTime={preview.period_end}>{date(preview.period_end)}</time> },
-              ] as const).map(({ field, value }) => (
-                <div key={field} className={`min-w-0 ${field === "financial_account_id" ? "col-span-2 desktop:col-span-1" : ""}`}>
-                  <dt className="text-sm text-muted-foreground">{mixed && field === "financial_account_id" ? t("multipleAccounts") : t(`fields.${field}`)}</dt>
-                  <dd className="mt-1 space-y-2 font-semibold wrap-anywhere">{value}</dd>
+            <div className="grid gap-4 desktop:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+              <dl className="grid grid-cols-2 gap-x-5">
+                <div className="min-w-0">
+                  <dt className="text-sm text-muted-foreground">{t("fields.source_id")}</dt>
+                  <dd className="mt-1 font-semibold wrap-anywhere">{preview.source.name}</dd>
                 </div>
-              ))}
-              <div className="col-span-full min-w-0 border-t border-border pt-3">
+                <div className="min-w-0">
+                  <dt className="text-sm text-muted-foreground">{t("fields.source_side")}</dt>
+                  <dd className="mt-1 font-semibold">
+                    <SourceSideLabel side={preview.source.side}>{t(`sides.${preview.source.side}`)}</SourceSideLabel>
+                  </dd>
+                </div>
+              </dl>
+              <section aria-labelledby="import-coverage">
+                <h2 className="text-sm text-muted-foreground" id="import-coverage">{t("coverageTitle")}</h2>
+                <ul className="mt-1 divide-y divide-border">
+                  {coverage.map(({ key, accounts, period_start, period_end }) => (
+                    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2 first:pt-0 last:pb-0" key={key}>
+                      <div className="space-y-1 wrap-anywhere">
+                        {accounts.map((account) => (
+                          <div key={account.id}>
+                            <span className="font-semibold">{account.name}</span>
+                            <span className="block font-mono text-xs text-muted-foreground">{account.code}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-sm font-medium tabular-nums">
+                        <time dateTime={period_start}>{date(period_start)}</time>
+                        {period_end !== period_start && <>{" – "}<time dateTime={period_end}>{date(period_end)}</time></>}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+            <dl className="mt-4 space-y-4 border-t border-border pt-3">
+              <div className="min-w-0">
                 <dt className="text-sm text-muted-foreground desktop:inline">{t(isPending ? "previewId" : "importId")}</dt>{" "}
                 <dd className="font-mono text-xs wrap-anywhere desktop:inline">{preview.id}</dd>
               </div>
@@ -149,7 +171,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                       {mixed && (
                         <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
                           <span className="mr-2 desktop:hidden">{t("fields.financial_account")}</span>
-                          <span className="font-mono text-xs">{codes.get(row.financial_account_id ?? "")}</span>
+                          <span className="font-mono text-xs">{accountsByID.get(row.financial_account_id ?? "")?.code}</span>
                         </td>
                       )}
                       <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">

@@ -16,7 +16,7 @@ export function ImportIssues({ issues }: { issues?: ImportIssue[] }) {
     <ul className="mt-2 space-y-2">
       {issues.map(({ line, field, reason, value }, index) => {
         const fieldKey = `fields.${field as Field}` as const;
-        const reasonKey = !line && reason === "invalid_date" ? "reasons.invalid_form_date" : `reasons.${reason as Reason}` as const;
+        const reasonKey = `reasons.${reason as Reason}` as const;
         const label = t.has(fieldKey) ? t(fieldKey) : field;
         const message = value && field === "financial_account" && reason === "unknown_financial_account"
           ? t("reasons.unknown_financial_account_code", { code: value })

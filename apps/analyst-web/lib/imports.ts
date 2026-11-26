@@ -54,6 +54,12 @@ type ImportSummary = {
   source: Source;
   financial_account?: FinancialAccount;
   financial_accounts?: FinancialAccount[];
+  account_coverage?: {
+    financial_account_id: string;
+    period_start: string;
+    period_end: string;
+    basis: "declared" | "inferred";
+  }[];
   period_start: string;
   period_end: string;
   conflicts?: ImportConflict[];
