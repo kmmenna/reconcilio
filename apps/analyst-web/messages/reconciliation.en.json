@@ -1,0 +1,40 @@
+{
+  "title": "Reconciliations",
+  "filter": "Financial Account",
+  "allAccounts": "All Financial Accounts",
+  "applyFilter": "Apply filter",
+  "amount": "Amount",
+  "completedAt": "Confirmed at",
+  "method": "Decision method",
+  "methods": { "automatic": "Automatic", "manual": "Manual" },
+  "empty": "No confirmed Reconciliations for this selection.",
+  "unavailable": "Reconciliations could not be loaded. Refresh the page to try again.",
+  "detailTitle": "Reconciliation detail",
+  "openDetail": "View details",
+  "backToList": "View Reconciliations",
+  "detailNotFound": "The reconciliation could not be found.",
+  "decisionActor": "Confirmed by",
+  "engine": "Matching engine",
+  "evidence": {
+    "title": "Recorded evidence",
+    "description": "Both Transactions had the same signed amount and currency. Their shared Payment Reference occurred once on each side when the decision was recorded.",
+    "referenceCounts": "Internal {internal, number} · External {external, number}"
+  },
+  "jobs": {
+    "title": "Reconciliation processing",
+    "completedAt": "Completed at",
+    "attempt": "Attempt {attempt, number} of {max, number}",
+    "result": "{count, plural, =0 {No automatic Reconciliations} one {# automatic Reconciliation} other {# automatic Reconciliations}}",
+    "notFound": "The processing job could not be found.",
+    "unavailable": "The job status is temporarily unavailable. Refresh the page to try again.",
+    "pollUnavailable": "The latest job status is unavailable. Retrying…",
+    "status": {
+      "queued": "Queued",
+      "running": "Processing",
+      "retrying": "Waiting to retry",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  }
+}

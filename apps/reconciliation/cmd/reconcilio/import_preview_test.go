@@ -2,19 +2,25 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/v2"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/identity"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/reconciliation"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/migrations"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -74,7 +80,12 @@ func TestCSVImportPreview(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("bootstrap administrator: created=%t error=%v", created, err)
 	}
-	mux := newHandler(pool, key)
+	queue, err := reconciliation.NewQueue(pool, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciler := reconciliation.New(pool)
+	mux := newHandler(pool, key, reconciler, queue)
 	request := func(method, path, token, contentType string, body io.Reader) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(ctx, method, path, body)
 		if token != "" {
@@ -182,6 +193,244 @@ func TestCSVImportPreview(t *testing.T) {
 		}
 	})
 
+	t.Run("confirms a preview once and durably queues the account", func(t *testing.T) {
+		var preview previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, start, end, strings.ReplaceAll(csv, "001", "TEST")), http.StatusCreated, &preview)
+		path := "/api/imports/" + preview.ID
+		var first, second *httptest.ResponseRecorder
+		var confirmations sync.WaitGroup
+		confirmations.Go(func() { first = request(http.MethodPost, path+"/confirm", session.Token, "", nil) })
+		confirmations.Go(func() { second = request(http.MethodPost, path+"/confirm", session.Token, "", nil) })
+		confirmations.Wait()
+
+		var receipt struct {
+			ID               string    `json:"id"`
+			Status           string    `json:"status"`
+			ConfirmedAt      time.Time `json:"confirmed_at"`
+			TransactionCount int       `json:"transaction_count"`
+			Jobs             []struct {
+				ID      int64 `json:"job_id"`
+				Account struct {
+					ID string `json:"id"`
+				} `json:"financial_account"`
+			} `json:"jobs"`
+		}
+		readResponse(t, first, http.StatusOK, &receipt)
+		if receipt.ID != preview.ID || receipt.Status != "confirmed" || receipt.ConfirmedAt.IsZero() ||
+			receipt.TransactionCount != 2 || len(receipt.Jobs) != 1 || receipt.Jobs[0].ID < 1 ||
+			receipt.Jobs[0].Account.ID != accountID {
+			t.Fatalf("unexpected receipt: %+v", receipt)
+		}
+		reloaded := request(http.MethodGet, path, session.Token, "", nil)
+		rt := request(http.MethodPost, path+"/confirm", session.Token, "", nil)
+		for _, response := range []*httptest.ResponseRecorder{second, reloaded, rt} {
+			if response.Code != http.StatusOK || response.Body.String() != first.Body.String() {
+				t.Fatalf("saved receipt differs: status=%d body=%s", response.Code, response.Body)
+			}
+		}
+		var job struct {
+			ID     int64  `json:"id"`
+			Status string `json:"status"`
+		}
+		readResponse(t, request(http.MethodGet, fmt.Sprintf("/api/jobs/%d", receipt.Jobs[0].ID), session.Token, "", nil), http.StatusOK, &job)
+		if job.ID != receipt.Jobs[0].ID || job.Status != "queued" {
+			t.Fatalf("unexpected durable job: %+v", job)
+		}
+	})
+
+	t.Run("records unique exact matches and preserves the original evidence", func(t *testing.T) {
+		var externalID string
+		for _, source := range sources {
+			if source.Side == "external" {
+				externalID = source.ID
+			}
+		}
+
+		worker, err := reconciliation.NewQueue(pool, reconciler, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		workerContext, stop := context.WithCancel(t.Context())
+		if err := worker.Start(workerContext); err != nil {
+			stop()
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			stop()
+			<-worker.Stopped()
+		})
+
+		stageCSV := func(source, data string) string {
+			t.Helper()
+			var staged previewResponse
+			readResponse(t, upload(session.Token, source, accountID, start, end, data), http.StatusCreated, &staged)
+			return "/api/imports/" + staged.ID
+		}
+		confirmImport := func(path string) int64 {
+			t.Helper()
+			var receipt struct {
+				Jobs []struct {
+					ID int64 `json:"job_id"`
+				} `json:"jobs"`
+			}
+			readResponse(t, request(http.MethodPost, path+"/confirm", session.Token, "", nil), http.StatusOK, &receipt)
+			if len(receipt.Jobs) != 1 {
+				t.Fatalf("unexpected scheduled jobs: %+v", receipt.Jobs)
+			}
+			return receipt.Jobs[0].ID
+		}
+		waitForJob := func(jobID int64, wantCount int) {
+			t.Helper()
+			path := fmt.Sprintf("/api/jobs/%d", jobID)
+			deadline, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			ticks := time.Tick(50 * time.Millisecond)
+			for {
+				var job struct {
+					Status         string    `json:"status"`
+					CompletedAt    time.Time `json:"completed_at"`
+					AutomaticCount *int      `json:"automatic_count"`
+				}
+				readResponse(t, request(http.MethodGet, path, session.Token, "", nil), http.StatusOK, &job)
+				switch job.Status {
+				case "completed":
+					if job.CompletedAt.IsZero() || job.AutomaticCount == nil || *job.AutomaticCount != wantCount {
+						t.Fatalf("unexpected job result: %s completed at %v with count %v", path, job.CompletedAt, job.AutomaticCount)
+					}
+					return
+				case "failed", "cancelled":
+					t.Fatalf("job %s ended as %s", path, job.Status)
+				}
+				select {
+				case <-deadline.Done():
+					t.Fatalf("job %s did not complete: %s", path, job.Status)
+				case <-ticks:
+				}
+			}
+		}
+
+		internal, err := os.ReadFile("../../../../examples/demo/internal.csv")
+		if err != nil {
+			t.Fatal(err)
+		}
+		external, err := os.ReadFile("../../../../examples/demo/external.csv")
+		if err != nil {
+			t.Fatal(err)
+		}
+		internalPath := stageCSV(sourceID, string(internal)+
+			"ERP-SIGN,PAY-SIGN,2026-11-17,-7.500,KWD,Opposite sign\n"+
+			"ERP-CURRENCY,PAY-CURRENCY,2026-11-17,1.00,BRL,Different currency\n"+
+			"ERP-EXACT,PAY-EXACT,2026-11-17,-9223372036854775.808,IQD,Exact minor units\n")
+		waitForJob(confirmImport(internalPath), 0)
+
+		externalPath := stageCSV(externalID, string(external)+
+			"CARD-SIGN,PAY-SIGN,2026-11-17,7.500,KWD,Opposite sign\n"+
+			"CARD-CURRENCY,PAY-CURRENCY,2026-11-17,1.00,USD,Different currency\n"+
+			"CARD-EXACT,PAY-EXACT,2026-11-17,-9223372036854775.808,IQD,Exact minor units\n")
+		// The failed enqueue must leave the preview pending and both eventual reference matches unique.
+		if _, err := pool.Exec(t.Context(), `
+			CREATE FUNCTION reject_test_job_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN
+			    RAISE EXCEPTION 'reconciliation queue unavailable in test';
+			END;
+			$$;
+			CREATE TRIGGER reject_test_job_insert BEFORE INSERT ON river_job
+			FOR EACH ROW EXECUTE FUNCTION reject_test_job_insert();
+		`); err != nil {
+			t.Fatal(err)
+		}
+		failed := request(http.MethodPost, externalPath+"/confirm", session.Token, "", nil)
+		if _, err := pool.Exec(t.Context(), "DROP TRIGGER reject_test_job_insert ON river_job"); err != nil {
+			t.Fatal(err)
+		}
+		var problem httpapi.Problem
+		readResponse(t, failed, http.StatusInternalServerError, &problem)
+		var restored previewResponse
+		readResponse(t, request(http.MethodGet, externalPath, session.Token, "", nil), http.StatusOK, &restored)
+		if restored.Status != "pending" || len(restored.Rows) != 7 {
+			t.Fatalf("failed confirmation changed its staged preview: %+v", restored)
+		}
+		waitForJob(confirmImport(externalPath), 2)
+
+		type summary struct {
+			ID          string    `json:"id"`
+			Amount      string    `json:"amount"`
+			Currency    string    `json:"currency"`
+			Method      string    `json:"method"`
+			ConfirmedAt time.Time `json:"confirmed_at"`
+		}
+		var results []summary
+		path := "/api/reconciliations?financial_account_id=" + accountID
+		readResponse(t, request(http.MethodGet, path, session.Token, "", nil), http.StatusOK, &results)
+		if len(results) != 2 {
+			t.Fatalf("only the two eligible reference matches should be confirmed: %+v", results)
+		}
+		var matchedID string
+		for _, result := range results {
+			if result.Method != "automatic" || result.ConfirmedAt.IsZero() {
+				t.Fatalf("unexpected decision summary: %+v", result)
+			}
+			switch result.Currency {
+			case "BRL":
+				matchedID = result.ID
+				if result.Amount != "-89.90" {
+					t.Fatalf("unexpected demo Money: %+v", result)
+				}
+			case "IQD":
+				if result.Amount != "-9223372036854775.808" {
+					t.Fatalf("exact minor units were not preserved: %+v", result)
+				}
+			default:
+				t.Fatalf("unexpected currency: %+v", result)
+			}
+		}
+		if matchedID == "" {
+			t.Fatal("the demo pair was not confirmed")
+		}
+
+		detailPath := "/api/reconciliations/" + matchedID
+		var detail struct {
+			Actor struct {
+				Kind string `json:"kind"`
+			} `json:"actor"`
+			Members []struct {
+				Side            string `json:"side"`
+				SourceReference string `json:"source_reference"`
+				Description     string `json:"description"`
+			} `json:"members"`
+			Evidence struct {
+				Reference     string `json:"payment_reference"`
+				InternalCount int    `json:"internal_reference_count"`
+				ExternalCount int    `json:"external_reference_count"`
+			} `json:"evidence"`
+		}
+		initialDetail := request(http.MethodGet, detailPath, session.Token, "", nil)
+		readResponse(t, initialDetail, http.StatusOK, &detail)
+		if detail.Actor.Kind != "engine" || detail.Evidence.Reference != "DEMO-PAY-001" ||
+			detail.Evidence.InternalCount != 1 || detail.Evidence.ExternalCount != 1 || len(detail.Members) != 2 ||
+			detail.Members[0].Side != "internal" || detail.Members[0].SourceReference != "ERP-001" ||
+			detail.Members[0].Description != "Cloud hosting subscription" ||
+			detail.Members[1].Side != "external" || detail.Members[1].SourceReference != "CARD-001" ||
+			detail.Members[1].Description != "CLOUDHOST* MONTHLY" {
+			t.Fatalf("unexpected reconciliation detail: %+v", detail)
+		}
+
+		waitForJob(confirmImport(stageCSV(sourceID, csvHeader+"ERP-LATE,DEMO-PAY-001,2026-11-16,-89.90,BRL,Another internal record\n")), 0)
+		waitForJob(confirmImport(stageCSV(externalID, csvHeader+"CARD-LATE,DEMO-PAY-001,2026-11-16,-89.90,BRL,Another external record\n")), 0)
+		if after := request(http.MethodGet, detailPath, session.Token, "", nil); after.Body.String() != initialDetail.Body.String() {
+			t.Fatalf("later duplicate changed recorded evidence: %s", after.Body)
+		}
+		readResponse(t, request(http.MethodGet, path, session.Token, "", nil), http.StatusOK, &results)
+		if len(results) != 2 {
+			t.Fatalf("late duplicates should not produce a second automatic decision: %+v", results)
+		}
+		readResponse(t, request(http.MethodGet, "/api/reconciliations?financial_account_id="+uuid.New().String(), session.Token, "", nil),
+			http.StatusOK, &results)
+		if len(results) != 0 {
+			t.Fatalf("filter returned results from another Financial Account: %+v", results)
+		}
+	})
+
 	t.Run("returns line and field diagnostics for invalid rows", func(t *testing.T) {
 		invalid := csvHeader +
 			"ERP-001,,2026-11-16,0.1,JPY,No fractional yen\n" +
@@ -272,6 +521,10 @@ func TestCSVImportPreview(t *testing.T) {
 		readResponse(t, request(http.MethodGet, "/api/sources", "", "", nil), http.StatusUnauthorized, &problem)
 		readResponse(t, upload("", sourceID, accountID, start, end, csv), http.StatusUnauthorized, &problem)
 		readResponse(t, request(http.MethodGet, "/api/imports/"+uuid.New().String(), "", "", nil), http.StatusUnauthorized, &problem)
+		readResponse(t, request(http.MethodPost, "/api/imports/"+uuid.New().String()+"/confirm", "", "", nil), http.StatusUnauthorized, &problem)
+		readResponse(t, request(http.MethodGet, "/api/jobs/1", "", "", nil), http.StatusUnauthorized, &problem)
+		readResponse(t, request(http.MethodGet, "/api/reconciliations", "", "", nil), http.StatusUnauthorized, &problem)
+		readResponse(t, request(http.MethodGet, "/api/reconciliations/"+uuid.New().String(), "", "", nil), http.StatusUnauthorized, &problem)
 		if problem.Code != "session_required" {
 			t.Fatalf("unexpected authentication problem: %+v", problem)
 		}

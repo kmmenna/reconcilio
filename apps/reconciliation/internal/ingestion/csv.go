@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/money"
 )
 
 const (
@@ -189,17 +190,5 @@ func decimalDigits(s string) bool {
 }
 
 func (r stagedRow) decimalAmount() string {
-	scale := r.MinorDigits
-	value := strconv.FormatInt(r.MinorUnits, 10)
-	if scale == 0 {
-		return value
-	}
-	digits, negative := strings.CutPrefix(value, "-")
-	digits = strings.Repeat("0", max(0, scale+1-len(digits))) + digits
-	cut := len(digits) - scale
-	amount := digits[:cut] + "." + digits[cut:]
-	if negative {
-		return "-" + amount
-	}
-	return amount
+	return money.Decimal(r.MinorUnits, r.MinorDigits)
 }

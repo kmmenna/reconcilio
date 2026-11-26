@@ -20,14 +20,25 @@ export type PreviewRow = {
   description: string;
 };
 
-export type ImportPreview = {
+type ImportSummary = {
   id: string;
-  status: "pending";
   source: Source;
   financial_account: FinancialAccount;
   period_start: string;
   period_end: string;
+};
+
+export type ImportPreview = ImportSummary & {
+  status: "pending";
   rows: PreviewRow[];
+};
+
+export type ImportReceipt = ImportSummary & {
+  status: "confirmed";
+  confirmed_at: string;
+  confirmed_by: string;
+  transaction_count: number;
+  jobs: { financial_account: FinancialAccount; job_id: number }[];
 };
 
 export type ImportIssue = {

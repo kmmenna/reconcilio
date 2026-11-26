@@ -17,6 +17,8 @@ To try the preview workflow, open **Import CSV** in the workspace and use the [C
 
 The demo binds the browser app to loopback. If you change `ANALYST_WEB_PORT`, set `WEB_ORIGIN` to the exact URL you open. The API generates a signing key at startup when `JWT_SECRET` is unset, so restarting the API then requires signing in again. Set a randomly generated secret of at least 32 bytes to keep existing tokens valid through a restart.
 
+The backend runs the API and River worker together by default. In a separate process, set `RECONCILIO_WORKER_ENABLED=false` for the API or `RECONCILIO_API_ENABLED=false` for the worker. Run `reconcilio migrate` against the shared database first to apply both application and River migrations. Compose does this at startup.
+
 ```sh
 docker compose down
 ```

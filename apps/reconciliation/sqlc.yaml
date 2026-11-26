@@ -27,3 +27,12 @@ sql:
         out: internal/ingestion/ingestiondb
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations
+    queries: internal/reconciliation/queries.sql
+    gen:
+      go:
+        package: reconciliationdb
+        out: internal/reconciliation/reconciliationdb
+        sql_package: pgx/v5
+        omit_unused_structs: true

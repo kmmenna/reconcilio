@@ -24,23 +24,29 @@ type previewRow struct {
 	Currency string `json:"currency"`
 }
 
-type preview struct {
+type importView struct {
 	ID               string                   `json:"id" format:"uuid"`
 	Status           string                   `json:"status"`
 	Source           catalog.Source           `json:"source"`
 	FinancialAccount catalog.FinancialAccount `json:"financial_account"`
 	PeriodStart      string                   `json:"period_start" format:"date"`
 	PeriodEnd        string                   `json:"period_end" format:"date"`
-	Rows             []previewRow             `json:"rows"`
+	Rows             []previewRow             `json:"rows,omitempty"`
+	ConfirmedAt      *time.Time               `json:"confirmed_at,omitempty"`
+	ConfirmedBy      string                   `json:"confirmed_by,omitempty" format:"uuid"`
+	TransactionCount *int64                   `json:"transaction_count,omitempty"`
+	Jobs             []scheduledJob           `json:"jobs,omitempty"`
 }
 
 type Service struct {
+	pool    *pgxpool.Pool
+	jobs    jobEnqueuer
 	queries *ingestiondb.Queries
 	catalog *catalog.Service
 }
 
-func New(pool *pgxpool.Pool, entries *catalog.Service) *Service {
-	return &Service{queries: ingestiondb.New(pool), catalog: entries}
+func New(pool *pgxpool.Pool, entries *catalog.Service, jobs jobEnqueuer) *Service {
+	return &Service{pool: pool, queries: ingestiondb.New(pool), catalog: entries, jobs: jobs}
 }
 
 func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePendingImportParams, data []byte, rows []stagedRow) (pgtype.UUID, error) {
@@ -54,14 +60,21 @@ func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePend
 	return s.queries.CreatePendingImport(ctx, params)
 }
 
-func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (preview, error) {
+func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (importView, error) {
 	record, err := s.queries.GetImport(ctx, id)
 	if err != nil {
-		return preview{}, err
+		return importView{}, err
+	}
+	if record.Status == "confirmed" {
+		var receipt importView
+		if err := json.Unmarshal(record.Receipt, &receipt); err != nil {
+			return importView{}, fmt.Errorf("decode import receipt: %w", err)
+		}
+		return receipt, nil
 	}
 	var document previewDocument
 	if err := json.Unmarshal(record.Preview, &document); err != nil {
-		return preview{}, fmt.Errorf("decode preview rows: %w", err)
+		return importView{}, fmt.Errorf("decode preview rows: %w", err)
 	}
 	return presentPreview(
 		record.ID,
@@ -74,7 +87,7 @@ func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (preview, erro
 	), nil
 }
 
-func presentPreview(id pgtype.UUID, status string, source catalog.Source, account catalog.FinancialAccount, start, end string, staged []stagedRow) preview {
+func presentPreview(id pgtype.UUID, status string, source catalog.Source, account catalog.FinancialAccount, start, end string, staged []stagedRow) importView {
 	rows := make([]previewRow, 0, len(staged))
 	for _, row := range staged {
 		rows = append(rows, previewRow{
@@ -83,7 +96,7 @@ func presentPreview(id pgtype.UUID, status string, source catalog.Source, accoun
 			Currency:  row.Currency,
 		})
 	}
-	return preview{
+	return importView{
 		ID:               id.String(),
 		Status:           status,
 		Source:           source,

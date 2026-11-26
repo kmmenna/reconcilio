@@ -11,6 +11,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const confirmImport = `-- name: ConfirmImport :exec
+UPDATE imports
+SET status = 'confirmed', preview = NULL, confirmed_at = $2, confirmed_by = $3, receipt = $4
+WHERE id = $1
+`
+
+type ConfirmImportParams struct {
+	ID          pgtype.UUID
+	ConfirmedAt pgtype.Timestamptz
+	ConfirmedBy pgtype.UUID
+	Receipt     []byte
+}
+
+func (q *Queries) ConfirmImport(ctx context.Context, arg ConfirmImportParams) error {
+	_, err := q.db.Exec(ctx, confirmImport,
+		arg.ID,
+		arg.ConfirmedAt,
+		arg.ConfirmedBy,
+		arg.Receipt,
+	)
+	return err
+}
+
 const createPendingImport = `-- name: CreatePendingImport :one
 INSERT INTO imports (
     source_id, source_side, financial_account_id, period_start, period_end,
@@ -51,7 +74,7 @@ const getImport = `-- name: GetImport :one
 SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
        imports.financial_account_id, financial_accounts.code AS financial_account_code,
        financial_accounts.name AS financial_account_name,
-       imports.period_start, imports.period_end, imports.preview
+       imports.period_start, imports.period_end, imports.preview, imports.receipt
 FROM imports
 JOIN sources ON sources.id = imports.source_id
 JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
@@ -70,6 +93,7 @@ type GetImportRow struct {
 	PeriodStart          pgtype.Date
 	PeriodEnd            pgtype.Date
 	Preview              []byte
+	Receipt              []byte
 }
 
 func (q *Queries) GetImport(ctx context.Context, id pgtype.UUID) (GetImportRow, error) {
@@ -87,6 +111,113 @@ func (q *Queries) GetImport(ctx context.Context, id pgtype.UUID) (GetImportRow, 
 		&i.PeriodStart,
 		&i.PeriodEnd,
 		&i.Preview,
+		&i.Receipt,
 	)
 	return i, err
+}
+
+const getImportAccountID = `-- name: GetImportAccountID :one
+SELECT financial_account_id
+FROM imports
+WHERE id = $1
+`
+
+func (q *Queries) GetImportAccountID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getImportAccountID, id)
+	var financial_account_id pgtype.UUID
+	err := row.Scan(&financial_account_id)
+	return financial_account_id, err
+}
+
+const getImportForConfirmation = `-- name: GetImportForConfirmation :one
+SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
+       sources.side AS current_source_side, imports.financial_account_id,
+       financial_accounts.code AS financial_account_code, financial_accounts.name AS financial_account_name,
+       imports.period_start, imports.period_end, imports.preview, imports.receipt
+FROM imports
+JOIN sources ON sources.id = imports.source_id
+JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
+WHERE imports.id = $1
+FOR SHARE OF sources
+`
+
+type GetImportForConfirmationRow struct {
+	ID                   pgtype.UUID
+	Status               string
+	SourceID             pgtype.UUID
+	SourceName           string
+	SourceSide           string
+	CurrentSourceSide    string
+	FinancialAccountID   pgtype.UUID
+	FinancialAccountCode string
+	FinancialAccountName string
+	PeriodStart          pgtype.Date
+	PeriodEnd            pgtype.Date
+	Preview              []byte
+	Receipt              []byte
+}
+
+func (q *Queries) GetImportForConfirmation(ctx context.Context, id pgtype.UUID) (GetImportForConfirmationRow, error) {
+	row := q.db.QueryRow(ctx, getImportForConfirmation, id)
+	var i GetImportForConfirmationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.SourceID,
+		&i.SourceName,
+		&i.SourceSide,
+		&i.CurrentSourceSide,
+		&i.FinancialAccountID,
+		&i.FinancialAccountCode,
+		&i.FinancialAccountName,
+		&i.PeriodStart,
+		&i.PeriodEnd,
+		&i.Preview,
+		&i.Receipt,
+	)
+	return i, err
+}
+
+const insertImportCoverage = `-- name: InsertImportCoverage :exec
+INSERT INTO import_coverage (
+    import_id, financial_account_id, source_id, period_start, period_end, all_have_source_references, job_id
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertImportCoverageParams struct {
+	ImportID                pgtype.UUID
+	FinancialAccountID      pgtype.UUID
+	SourceID                pgtype.UUID
+	PeriodStart             pgtype.Date
+	PeriodEnd               pgtype.Date
+	AllHaveSourceReferences bool
+	JobID                   int64
+}
+
+func (q *Queries) InsertImportCoverage(ctx context.Context, arg InsertImportCoverageParams) error {
+	_, err := q.db.Exec(ctx, insertImportCoverage,
+		arg.ImportID,
+		arg.FinancialAccountID,
+		arg.SourceID,
+		arg.PeriodStart,
+		arg.PeriodEnd,
+		arg.AllHaveSourceReferences,
+		arg.JobID,
+	)
+	return err
+}
+
+type InsertTransactionsParams struct {
+	ImportID           pgtype.UUID
+	FinancialAccountID pgtype.UUID
+	SourceID           pgtype.UUID
+	SourceSide         string
+	SourceReference    pgtype.Text
+	PaymentReference   pgtype.Text
+	TransactionDate    pgtype.Date
+	AmountMinor        int64
+	Currency           string
+	MinorDigits        int32
+	Description        string
 }
