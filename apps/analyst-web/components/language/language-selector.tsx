@@ -1,23 +1,19 @@
 "use client";
 
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, GlobeIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useId, useOptimistic, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { isLocale, type LanguagePreference } from "@/i18n/locales";
 import { correlatedFetch } from "@/lib/correlation";
 import { readProblemCode, useProblemMessage } from "@/lib/problem-message";
 
-export type LanguagePresentation = "select" | "menu";
-
-export function LanguageSelector({ preference, presentation }: {
+export function LanguageSelector({ preference, side }: {
   preference: LanguagePreference;
-  presentation: LanguagePresentation;
+  side: "top" | "bottom";
 }) {
   const router = useRouter();
   const t = useTranslations("Language");
@@ -65,63 +61,46 @@ export function LanguageSelector({ preference, presentation }: {
 
   return (
     <div className="min-w-0">
-      {presentation === "menu" ? (
-        <DropdownMenu.Root modal={false}>
-          <DropdownMenu.Trigger asChild>
-            <Button
-              variant="link"
-              size="sm"
-              className="has-[>svg]:px-0"
-              aria-describedby={errorId}
-              ref={menuTrigger}
-            >
-              {t("label")}
-              <ChevronDownIcon aria-hidden="true" className="size-3.5" />
-            </Button>
-          </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content
-              align="end"
-              side="top"
-              sideOffset={6}
-              collisionPadding={16}
-              className="z-50 w-44 max-h-(--radix-dropdown-menu-content-available-height) max-w-(--radix-dropdown-menu-content-available-width) overflow-y-auto rounded-md border border-border bg-card p-1 text-foreground outline-none"
-            >
-              <DropdownMenu.RadioGroup value={selected} onValueChange={changeLanguage}>
-                {options.map(({ value, label, lang }) => (
-                  <DropdownMenu.RadioItem
-                    className="flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-sm data-highlighted:bg-accent focus-visible:-outline-offset-2 data-disabled:cursor-wait data-disabled:opacity-60"
-                    disabled={pending}
-                    key={value}
-                    value={value}
-                  >
-                    <span lang={lang}>{label}</span>
-                    <DropdownMenu.ItemIndicator>
-                      <CheckIcon aria-hidden="true" className="size-4 text-primary" />
-                    </DropdownMenu.ItemIndicator>
-                  </DropdownMenu.RadioItem>
-                ))}
-              </DropdownMenu.RadioGroup>
-            </DropdownMenu.Content>
-          </DropdownMenu.Portal>
-        </DropdownMenu.Root>
-      ) : (
-        <div className="flex items-center gap-2.5">
-          <Label className="text-muted-foreground" htmlFor={id}>{t("label")}</Label>
-          <NativeSelect
+      <DropdownMenu.Root modal={false}>
+        <DropdownMenu.Trigger asChild>
+          <Button
+            variant="link"
+            size="sm"
+            className="has-[>svg]:px-0"
             aria-describedby={errorId}
-            className="h-11 bg-card pr-9 shadow-none"
-            disabled={pending}
-            id={id}
-            value={selected}
-            onChange={(event) => changeLanguage(event.currentTarget.value)}
+            ref={menuTrigger}
           >
-            {options.map(({ value, label, lang }) => (
-              <NativeSelectOption key={value} value={value} lang={lang}>{label}</NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </div>
-      )}
+            <GlobeIcon aria-hidden="true" className="size-4" />
+            {t("label")}
+            <ChevronDownIcon aria-hidden="true" className="size-3.5" />
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            side={side}
+            sideOffset={6}
+            collisionPadding={16}
+            className="choice-menu w-44 max-h-(--radix-dropdown-menu-content-available-height) max-w-(--radix-dropdown-menu-content-available-width)"
+          >
+            <DropdownMenu.RadioGroup value={selected} onValueChange={changeLanguage}>
+              {options.map(({ value, label, lang }) => (
+                <DropdownMenu.RadioItem
+                  className="choice-option"
+                  disabled={pending}
+                  key={value}
+                  value={value}
+                >
+                  <span lang={lang}>{label}</span>
+                  <DropdownMenu.ItemIndicator>
+                    <CheckIcon aria-hidden="true" className="size-4 text-primary" />
+                  </DropdownMenu.ItemIndicator>
+                </DropdownMenu.RadioItem>
+              ))}
+            </DropdownMenu.RadioGroup>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
       {message && (
         <p className="mt-2 max-w-56 scroll-mb-3 text-sm text-destructive" id={errorId} ref={errorMessage} role="alert">
           {message}

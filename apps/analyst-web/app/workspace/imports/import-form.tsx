@@ -7,10 +7,11 @@ import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { FormSelect } from "@/components/ui/form-select";
 import { csvColumns, type FinancialAccount, type ImportView, type ImportProblem, type Source } from "@/lib/imports";
 import type importMessages from "@/messages/imports.en.json";
 import { CoverageOverlap } from "./coverage-overlap";
+import { CSVFileField } from "./csv-file-field";
 import { ImportDateField } from "./import-date-field";
 import { ImportIssues } from "./import-issues";
 
@@ -24,7 +25,6 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
   const router = useRouter();
   const [selection, setSelection] = useState("");
   const mixed = selection === fromCSV;
-  const [fileName, setFileName] = useState("");
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<ImportProblem | null>(null);
 
@@ -93,56 +93,44 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="source_id">{t("fields.source_id")}</Label>
-            <NativeSelect {...fieldError("source_id")} className="h-11 max-w-full shadow-none" id="source_id" name="source_id" defaultValue="" required>
-              <NativeSelectOption value="" disabled>{t("chooseSource")}</NativeSelectOption>
-              {sources.map((source) => <NativeSelectOption key={source.id} value={source.id}>{source.name}</NativeSelectOption>)}
-            </NativeSelect>
+            <FormSelect
+              {...fieldError("source_id")}
+              disabled={pending}
+              id="source_id"
+              name="source_id"
+              placeholder={t("chooseSource")}
+              options={sources.map(({ id, name }) => ({ value: id, label: name }))}
+              required
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="financial_account_id">{t("fields.financial_account_id")}</Label>
-            <NativeSelect
+            <FormSelect
               {...fieldError("financial_account_id")}
-              className="h-11 max-w-full shadow-none"
+              disabled={pending}
               id="financial_account_id"
               name="financial_account_id"
+              placeholder={t("chooseAccount")}
+              options={[
+                { value: fromCSV, label: t("useCSVAccountCodes") },
+                ...financialAccounts.map(({ id, name }) => ({ value: id, label: name })),
+              ]}
               value={selection}
-              onChange={(event) => setSelection(event.currentTarget.value)}
+              onValueChange={setSelection}
               required
-            >
-              <NativeSelectOption value="" disabled>{t("chooseAccount")}</NativeSelectOption>
-              <NativeSelectOption value={fromCSV}>{t("useCSVAccountCodes")}</NativeSelectOption>
-              {financialAccounts.map((account) => <NativeSelectOption key={account.id} value={account.id}>{account.name}</NativeSelectOption>)}
-            </NativeSelect>
+            />
           </div>
           <ImportDateField field="period_start" invalid={fieldError("period_start")["aria-invalid"]} />
           <ImportDateField field="period_end" invalid={fieldError("period_end")["aria-invalid"]} />
         </div>
 
         <div className="space-y-3 border-t border-border pt-5">
-          {mixed && <p className="text-sm text-muted-foreground">{t("mixedHelp")}</p>}
-          <Label htmlFor="csv-file">{t("fields.file")}</Label>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <input
-              {...fieldError("file")}
-              accept=".csv,text/csv"
-              aria-label={t("fields.file")}
-              className="peer sr-only"
-              id="csv-file"
-              name="file"
-              type="file"
-              required
-              onChange={(event) => setFileName(event.currentTarget.files?.[0]?.name ?? "")}
-            />
-            <label
-              className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-disabled:cursor-wait peer-disabled:opacity-50"
-              htmlFor="csv-file"
-            >
-              {t("chooseFile")}
-            </label>
-            <span className="min-w-0 text-sm text-muted-foreground wrap-anywhere" aria-live="polite">
-              {fileName || t("noFile")}
-            </span>
-          </div>
+          <CSVFileField
+            describedBy={[fieldError("file")["aria-describedby"], mixed && "csv-account-help"].filter(Boolean).join(" ")}
+            disabled={pending}
+            invalid={fieldError("file")["aria-invalid"]}
+          />
+          {mixed && <p className="text-sm text-muted-foreground" id="csv-account-help">{t("mixedHelp")}</p>}
           <details className="text-sm text-muted-foreground">
             <summary className="w-fit cursor-pointer text-primary underline-offset-4 hover:underline">{t("fileFormat")}</summary>
             <p className="mt-2">{t("fileFormatHelp")}</p>

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { selectFormOption } from "./form-select";
 import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
@@ -53,8 +54,8 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     ["Demo ERP", "internal.csv", "Cloud hosting subscription", "ERP-001", "Internal"],
     ["Demo Card Statement", "external.csv", "CLOUDHOST* MONTHLY", "CARD-001", "External"],
   ]) {
-    await page.getByLabel("Source", { exact: true }).selectOption({ label: source });
-    await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
+    await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), source);
+    await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
     if (source !== "Demo ERP") await startDate.fill("11/16/2026");
     await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     const data = await readFile(resolve(__dirname, "../../../examples/demo", fixture));
@@ -89,8 +90,8 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     await page.getByRole("link", { name: "Import another CSV" }).click();
   }
 
-  await page.getByLabel("Source", { exact: true }).selectOption({ label: "Demo ERP" });
-  await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
+  await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), "Demo ERP");
+  await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
   await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
   await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
   await page.getByLabel("CSV file", { exact: true }).setInputFiles({

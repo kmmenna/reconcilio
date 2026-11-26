@@ -7,7 +7,7 @@ import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { FormSelect } from "@/components/ui/form-select";
 import type { FinancialAccount } from "@/lib/imports";
 
 export function AccountFilter({ accounts, initialAccount }: { accounts: FinancialAccount[]; initialAccount: string }) {
@@ -49,23 +49,25 @@ export function AccountFilter({ accounts, initialAccount }: { accounts: Financia
       <form action="/workspace/reconciliations" className="mt-7 flex flex-wrap items-end gap-3" method="get" aria-busy={pending}>
         <div className="min-w-0 space-y-2">
           <Label htmlFor="reconciliation-account">{t("filter")}</Label>
-          <NativeSelect
+          <FormSelect
             id="reconciliation-account"
             name="financial_account_id"
-            className="h-11 max-w-[min(21rem,calc(100vw-2.6rem))] bg-card shadow-none"
+            className="w-64 max-w-full"
+            placeholder={t("allAccounts")}
+            options={[
+              { value: "", label: t("allAccounts") },
+              ...accounts.map(({ id, name }) => ({ value: id, label: name })),
+            ]}
             value={account}
-            onChange={(event) => {
-              setAccount(event.target.value);
+            onValueChange={(value) => {
+              setAccount(value);
               setProblem(null);
             }}
             disabled={pending}
-          >
-            <NativeSelectOption value="">{t("allAccounts")}</NativeSelectOption>
-            {accounts.map(({ id, name }) => <NativeSelectOption key={id} value={id}>{name}</NativeSelectOption>)}
-          </NativeSelect>
+          />
         </div>
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" variant="outline" className="h-11" disabled={pending}>{t("applyFilter")}</Button>
+          <Button type="submit" className="h-11" disabled={pending}>{t("applyFilter")}</Button>
           <Button type="button" variant="outline" className="min-h-11 whitespace-normal" onClick={reprocess} disabled={!account || pending}>
             {t(pending ? "reprocess.queueing" : "reprocess.action")}
           </Button>

@@ -26,7 +26,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
       </div>
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-border bg-card px-[max(1.3rem,5vw)] py-3">
         <p className="text-sm text-muted-foreground">Reconcilio · {t("footerDescription")}</p>
-        <LanguageControl presentation="menu" />
+        <LanguageControl side="top" />
       </footer>
     </div>
   );

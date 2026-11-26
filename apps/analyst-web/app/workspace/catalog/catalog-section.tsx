@@ -8,7 +8,7 @@ import { useId, useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { FormSelect } from "@/components/ui/form-select";
 import type { FinancialAccount, SourceEntry } from "@/lib/imports";
 import type messages from "@/messages/catalog.en.json";
 
@@ -42,7 +42,7 @@ export function CatalogSection({ collection, entries }: { collection: Collection
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold" id={heading}>{t(accounts ? "accounts" : "sources")}</h2>
         {entries && editor !== "new" && (
-          <Button className="min-h-11 whitespace-normal" disabled={refreshing} onClick={() => openEditor("new")} type="button" variant="outline">
+          <Button className="min-h-11 whitespace-normal" disabled={refreshing} onClick={() => openEditor("new")} type="button">
             {t(accounts ? "addAccount" : "addSource")}
           </Button>
         )}
@@ -148,19 +148,19 @@ function CatalogEditor({ collection, entry, onCancel, onSaved }: {
         {!accounts && (
           <div className="space-y-2">
             <Label htmlFor={`${field}-side`}>{t("side")}</Label>
-            <NativeSelect
+            <FormSelect
               aria-describedby={source?.side_editable === false ? `${field}-side-help` : undefined}
-              className="h-11 shadow-none"
               defaultValue={source?.side ?? "internal"}
-              disabled={source?.side_editable === false}
+              disabled={pending || source?.side_editable === false}
               id={`${field}-side`}
               key={source?.side_editable === false ? source.side : "editable"}
               name="side"
+              options={[
+                { value: "internal", label: sides("internal") },
+                { value: "external", label: sides("external") },
+              ]}
               required
-            >
-              <NativeSelectOption value="internal">{sides("internal")}</NativeSelectOption>
-              <NativeSelectOption value="external">{sides("external")}</NativeSelectOption>
-            </NativeSelect>
+            />
             {source?.side_editable === false && <p className="text-sm text-muted-foreground" id={`${field}-side-help`}>{t("sideLocked")}</p>}
           </div>
         )}

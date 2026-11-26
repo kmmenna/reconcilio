@@ -167,7 +167,7 @@ export function AccountForm({ kind, displayName }: { kind: FormKind; displayName
               <Input
                 id={fieldId}
                 name={field}
-                className="h-11 bg-card shadow-none md:text-base"
+                className="h-11 md:text-base"
                 defaultValue={field === "displayName" ? displayName : undefined}
                 type={definition.type}
                 autoComplete={definition.autoComplete}

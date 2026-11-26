@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { selectFormOption } from "./form-select";
 import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
@@ -29,7 +30,7 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
 
   const reprocess = page.getByRole("button", { name: "Reprocess account" });
   await expect(reprocess).toBeDisabled();
-  await page.getByLabel("Financial Account").selectOption(accountID);
+  await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), account.name);
   const denied = await page.request.post(`${origin}/api/financial-accounts/${accountID}/reprocess`, {
     headers: { Origin: "https://example.invalid" },
   });

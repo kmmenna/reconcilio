@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { chooseDemoImport } from "./form-select";
 import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
@@ -26,18 +27,13 @@ test("keeps the recorded bilingual ranking on shared links without a provider ca
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByLabel("Financial Account")).toBeVisible();
-
-  const account = await page.getByLabel("Financial Account").locator("option").filter({ hasText: "Corporate Card" }).getAttribute("value");
-  if (!account) throw new Error("The Corporate Card demo account is missing.");
   for (const [source, fixture] of [["Demo ERP", "internal.csv"], ["Demo Card Statement", "external.csv"]]) {
-    const sourceID = await page.getByLabel("Source", { exact: true }).locator("option").filter({ hasText: source }).getAttribute("value");
-    if (!sourceID) throw new Error(`Demo source ${source} is missing.`);
+    const { sourceID, accountID } = await chooseDemoImport(page, source);
     const preview = await page.request.post(`${origin}/api/imports`, {
       headers: { Origin: origin },
       multipart: {
         source_id: sourceID,
-        financial_account_id: account,
+        financial_account_id: accountID,
         period_start: "2026-11-16",
         period_end: "2026-11-22",
         file: { name: fixture, mimeType: "text/csv", buffer: await readFile(resolve(__dirname, "../../../examples/demo", fixture)) },
