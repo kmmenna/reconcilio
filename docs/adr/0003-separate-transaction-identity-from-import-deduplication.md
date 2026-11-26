@@ -4,7 +4,7 @@ Every transaction has a permanent internal identity used by reconciliations. Whe
 
 Enforce that identity in PostgreSQL with a partial unique index on `(source_id, financial_account_id, source_reference)` for rows with a non-null source reference. Represent an absent source reference as null and apply the import coverage rules to those records.
 
-The MVP accepts CSVs with and without stable references from the same source. Record coverage by source and financial account, including each account represented in a mixed CSV. Validate that the records fall within the declared period. Recognize an identical file replay with the same source and account assignments before checking for overlaps. For each source and account, allow overlapping coverage only when both imports provide stable references for every record in that account. Matching financial fields alone can collapse distinct transactions.
+The MVP accepts CSVs with and without stable references from the same source. Record coverage by source and financial account, including each account represented in a mixed CSV. Validate that the records fall within a supplied period. [ADR 0015](0015-infer-csv-import-coverage-from-transaction-dates.md) defines the default coverage for CSV imports. Recognize an identical file replay with the same source and account assignments before checking for overlaps. For each source and account, allow overlapping coverage only when both imports provide stable references for every record in that account. Matching financial fields alone can collapse distinct transactions.
 
 Row validation errors such as invalid fields or unknown financial account codes block confirmation of the entire CSV. Report the affected rows so the analyst can correct and resubmit the file. Record transactions and coverage only after validation passes.
 
@@ -28,7 +28,7 @@ During confirmation, lock the affected financial account rows before rechecking 
 
 | Operation | Contract |
 | --- | --- |
-| `POST /api/imports` | Accept a multipart CSV upload with the source, coverage period, and selected account for single-account files. Return the preview and import ID or row validation errors. |
+| `POST /api/imports` | Accept a multipart CSV upload with the source and selected account for single-account files. Accept an optional explicit coverage period or infer it under ADR 0015. Return the preview and import ID or row validation errors. |
 | `GET /api/imports/{id}` | Return the pending preview or the recorded outcome once resolved. |
 | `POST /api/imports/{id}/refresh-preview` | Regenerate a pending preview from its stored records and return the new preview and its own import ID. |
 | `POST /api/imports/{id}/confirm` | Accept the IDs of the conflicts the analyst resolved by keeping the original transaction, recheck the import, and return the recorded result and job IDs. Repeating confirmation for a confirmed import returns the same result and job IDs. |
