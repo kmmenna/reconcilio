@@ -29,6 +29,22 @@
   "rowCount": "{count, plural, one {# row} other {# rows}}",
   "absentReference": "No reference",
   "noCatalog": "An import requires at least one Source and one Financial Account.",
+  "reviewTitle": "Review import",
+  "conflictTitle": "Source Reference conflicts",
+  "conflictIntro": "These rows differ from existing Transactions. Keep the original values and import the other rows, or cancel the import.",
+  "conflictLine": "CSV line {line}",
+  "storedValue": "Stored Transaction",
+  "incomingValue": "Incoming CSV",
+  "keepOriginal": "Keep originals and import",
+  "cancelImport": "Cancel import",
+  "canceling": "Canceling…",
+  "canceledTitle": "Import canceled",
+  "canceledAt": "Canceled at",
+  "canceledSummary": "No Transactions were imported.",
+  "recordedDecision": "Recorded decision",
+  "keptSummary": "The original Transactions were kept.",
+  "canceledConflictSummary": "The import was canceled with these conflicts.",
+  "coverageDates": "An earlier import for {account} covers {start} through {end}. Choose a file and dates outside that period, or use exports with Source References on every row.",
   "fields": {
     "source_id": "Source",
     "source_side": "Side",
@@ -61,7 +77,11 @@
     "file_too_large": "Choose a smaller CSV file. The upload limit is 1 MiB.",
     "catalog_unavailable": "The import selections are temporarily unavailable.",
     "preview_not_found": "The import preview could not be found.",
-    "preview_unavailable": "The import preview is temporarily unavailable."
+    "preview_unavailable": "The import preview is temporarily unavailable.",
+    "cancellation_unavailable": "The import could not be canceled. Try again.",
+    "import_conflicts_changed": "The conflicts changed since the preview. Review the updated values before confirming.",
+    "import_conflicts_require_review": "Review the conflicts below before confirming.",
+    "import_coverage_overlap": "The dates overlap an earlier import, and at least one file has rows without Source References."
   },
   "reasons": {
     "invalid_source": "Select a Source.",
@@ -83,6 +103,7 @@
     "invalid_amount": "Use a signed decimal amount with a period as the decimal separator.",
     "invalid_precision": "This amount has too many decimal places for its currency.",
     "amount_out_of_range": "This amount exceeds the supported range.",
-    "unknown": "Check this field."
+    "unknown": "Check this field.",
+    "conflicting_source_reference": "This Source Reference appears on rows with different values."
   }
 }

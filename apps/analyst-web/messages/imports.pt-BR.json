@@ -29,6 +29,22 @@
   "rowCount": "{count, plural, one {# linha} other {# linhas}}",
   "absentReference": "Sem referência",
   "noCatalog": "Para importar um CSV, é preciso ter pelo menos uma fonte e uma conta financeira.",
+  "reviewTitle": "Revisar importação",
+  "conflictTitle": "Conflitos de referência da fonte",
+  "conflictIntro": "Estas linhas têm valores diferentes dos das transações existentes. Mantenha as transações originais e importe as outras linhas, ou cancele a importação.",
+  "conflictLine": "Linha {line} do CSV",
+  "storedValue": "Transação registrada",
+  "incomingValue": "Valor no CSV",
+  "keepOriginal": "Manter originais e importar",
+  "cancelImport": "Cancelar importação",
+  "canceling": "Cancelando…",
+  "canceledTitle": "Importação cancelada",
+  "canceledAt": "Cancelada em",
+  "canceledSummary": "Nenhuma transação foi importada.",
+  "recordedDecision": "Decisão registrada",
+  "keptSummary": "As transações originais foram mantidas.",
+  "canceledConflictSummary": "A importação foi cancelada com estes conflitos.",
+  "coverageDates": "Uma importação anterior da conta {account} abrange o período de {start} a {end}. Escolha um arquivo e datas fora desse período ou use arquivos com referências da fonte em todas as linhas.",
   "fields": {
     "source_id": "Fonte",
     "source_side": "Lado",
@@ -61,7 +77,11 @@
     "file_too_large": "Escolha um CSV menor. O limite de envio é de 1 MiB.",
     "catalog_unavailable": "As opções de importação estão temporariamente indisponíveis.",
     "preview_not_found": "A prévia da importação não foi encontrada.",
-    "preview_unavailable": "A prévia da importação está temporariamente indisponível."
+    "preview_unavailable": "A prévia da importação está temporariamente indisponível.",
+    "cancellation_unavailable": "Não foi possível cancelar a importação. Tente novamente.",
+    "import_conflicts_changed": "Os conflitos mudaram desde a prévia. Revise os valores atualizados antes de confirmar.",
+    "import_conflicts_require_review": "Revise os conflitos abaixo antes de confirmar.",
+    "import_coverage_overlap": "As datas se sobrepõem às de uma importação anterior, e pelo menos um dos arquivos tem linhas sem referência da fonte."
   },
   "reasons": {
     "invalid_source": "Selecione uma fonte.",
@@ -83,6 +103,7 @@
     "invalid_amount": "Use um valor decimal com sinal e ponto como separador decimal.",
     "invalid_precision": "Esse valor tem casas decimais demais para a moeda informada.",
     "amount_out_of_range": "Esse valor excede o intervalo aceito.",
-    "unknown": "Confira este campo."
+    "unknown": "Confira este campo.",
+    "conflicting_source_reference": "Esta referência da fonte aparece em linhas com valores diferentes."
   }
 }

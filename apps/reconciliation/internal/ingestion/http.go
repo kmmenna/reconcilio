@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"log/slog"
@@ -35,7 +36,21 @@ type getPreviewInput struct {
 	ID            string `path:"id"`
 }
 
+type confirmImportInput struct {
+	Authorization string `header:"Authorization"`
+	ID            string `path:"id"`
+	Body          *struct {
+		KeepOriginalConflictIDs []string `json:"keep_original_conflict_ids,omitempty" maxItems:"10000"`
+	}
+}
+
+type importProblemContext struct {
+	Preview  *importView      `json:"preview,omitempty"`
+	Coverage *coverageOverlap `json:"coverage,omitempty"`
+}
+
 type previewOutput struct {
+	Status       int
 	CacheControl string `header:"Cache-Control"`
 	Body         importView
 }
@@ -48,7 +63,7 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		Path:               "/api/imports",
 		Summary:            "Stage a CSV import for review",
 		DefaultStatus:      http.StatusCreated,
-		Errors:             []int{http.StatusUnauthorized, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity},
+		Errors:             []int{http.StatusUnauthorized, http.StatusConflict, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity},
 		Security:           bearer,
 		MaxBodyBytes:       1024 * 1024,
 		SkipValidateParams: true, // Report invalid selections with stable, field-specific reasons.
@@ -85,39 +100,59 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		if err != nil {
 			return nil, previewUnavailable(ctx, err)
 		}
-		return &previewOutput{CacheControl: "no-store", Body: staged}, nil
+		return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: staged}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "confirm-import",
 		Method:      http.MethodPost,
 		Path:        "/api/imports/{id}/confirm",
 		Summary:     "Confirm an import and schedule reconciliation",
+		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+		Security:    bearer,
+	}, func(ctx context.Context, in *confirmImportInput) (*previewOutput, error) {
+		var keepIDs []string
+		if in.Body != nil {
+			keepIDs = in.Body.KeepOriginalConflictIDs
+		}
+		return s.resolveImport(ctx, identities, in.ID, in.Authorization, false, keepIDs)
+	})
+	huma.Register(api, huma.Operation{
+		OperationID: "cancel-import",
+		Method:      http.MethodPost,
+		Path:        "/api/imports/{id}/cancel",
+		Summary:     "Cancel an import and save the decision",
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		Security:    bearer,
 	}, func(ctx context.Context, in *getPreviewInput) (*previewOutput, error) {
-		analystID, err := identities.RequireUser(ctx, in.Authorization)
-		if err != nil {
-			return nil, err
-		}
-		id, err := uuid.Parse(in.ID)
-		if err != nil {
-			return nil, previewNotFound()
-		}
-		receipt, err := s.confirm(ctx, pgtype.UUID{Bytes: id, Valid: true}, analystID)
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			return nil, previewNotFound()
-		case errors.Is(err, errSourceSideChanged):
-			return nil, httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
-		case errors.Is(err, errImportResolved):
-			return nil, httpapi.NewProblem(http.StatusConflict, "import_already_resolved", "The import has already been resolved.")
-		case err != nil:
-			slog.ErrorContext(ctx, "Could not confirm import", "error", err)
-			return nil, huma.Error500InternalServerError("The import could not be confirmed.")
-		}
-		return &previewOutput{CacheControl: "no-store", Body: receipt}, nil
+		return s.resolveImport(ctx, identities, in.ID, in.Authorization, true, nil)
 	})
+}
 
+func (s *Service) resolveImport(ctx context.Context, identities *identity.Service, idValue, authorization string, cancel bool, keepIDs []string) (*previewOutput, error) {
+	analystID, err := identities.RequireUser(ctx, authorization)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(idValue)
+	if err != nil {
+		return nil, previewNotFound()
+	}
+	receipt, err := s.resolve(ctx, pgtype.UUID{Bytes: id, Valid: true}, analystID, cancel, keepIDs)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, previewNotFound()
+	case errors.Is(err, errSourceSideChanged):
+		return nil, httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
+	case errors.Is(err, errImportResolved):
+		return nil, httpapi.NewProblem(http.StatusConflict, "import_already_resolved", "The import has already been resolved.")
+	case err != nil:
+		if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+			return nil, problem
+		}
+		slog.ErrorContext(ctx, "Could not resolve import", "error", err)
+		return nil, huma.Error500InternalServerError("The import could not be resolved.")
+	}
+	return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: receipt}, nil
 }
 
 func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *importForm) (*previewOutput, error) {
@@ -140,6 +175,19 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *i
 	if err != nil {
 		return nil, previewUnavailable(ctx, err)
 	}
+	fingerprint := sha256.Sum256(data)
+	params.FileFingerprint = fingerprint[:]
+	replay, err := findReplay(ctx, s.queries, params.SourceID, params.FinancialAccountID, params.FileFingerprint)
+	if err != nil {
+		return nil, previewUnavailable(ctx, err)
+	}
+	if replay.ID.Valid {
+		receipt, err := readReceipt(replay.Receipt)
+		if err != nil {
+			return nil, previewUnavailable(ctx, err)
+		}
+		return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: receipt}, nil
+	}
 	rows, issues := parseCSV(data, params.PeriodStart.Time, params.PeriodEnd.Time)
 	if len(issues) > 0 {
 		return nil, importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
@@ -147,12 +195,18 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *i
 
 	params.CreatedBy = userID
 	params.SourceSide = source.Side
-	id, err := s.savePreview(ctx, params, data, rows)
+	staged, err := s.savePreview(ctx, params, source, account, rows)
+	if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+		return nil, problem
+	}
 	if err != nil {
 		return nil, previewUnavailable(ctx, err)
 	}
-	staged := presentPreview(id, "pending", source, account, form.PeriodStart, form.PeriodEnd, rows)
-	return &previewOutput{CacheControl: "no-store", Body: staged}, nil
+	status := http.StatusCreated
+	if staged.Status == "confirmed" {
+		status = http.StatusOK
+	}
+	return &previewOutput{Status: status, CacheControl: "no-store", Body: staged}, nil
 }
 
 func importSelections(form *importForm) (ingestiondb.CreatePendingImportParams, []httpapi.Issue) {

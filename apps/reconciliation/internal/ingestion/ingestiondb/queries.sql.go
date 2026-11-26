@@ -11,6 +11,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelImport = `-- name: CancelImport :exec
+UPDATE imports SET status = 'canceled', preview = NULL, receipt = $2 WHERE id = $1
+`
+
+type CancelImportParams struct {
+	ID      pgtype.UUID
+	Receipt []byte
+}
+
+func (q *Queries) CancelImport(ctx context.Context, arg CancelImportParams) error {
+	_, err := q.db.Exec(ctx, cancelImport, arg.ID, arg.Receipt)
+	return err
+}
+
 const confirmImport = `-- name: ConfirmImport :exec
 UPDATE imports
 SET status = 'confirmed', preview = NULL, confirmed_at = $2, confirmed_by = $3, receipt = $4
@@ -68,6 +82,78 @@ func (q *Queries) CreatePendingImport(ctx context.Context, arg CreatePendingImpo
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const findBlockedCoverage = `-- name: FindBlockedCoverage :one
+SELECT import_id, period_start, period_end, all_have_source_references
+FROM import_coverage
+WHERE source_id = $1 AND financial_account_id = $2
+  AND period_end >= $3::date
+  AND period_start <= $4::date
+  AND (NOT all_have_source_references OR NOT $5::boolean)
+ORDER BY period_start, period_end, import_id
+LIMIT 1
+`
+
+type FindBlockedCoverageParams struct {
+	SourceID                    pgtype.UUID
+	FinancialAccountID          pgtype.UUID
+	IncomingStart               pgtype.Date
+	IncomingEnd                 pgtype.Date
+	IncomingHasSourceReferences bool
+}
+
+type FindBlockedCoverageRow struct {
+	ImportID                pgtype.UUID
+	PeriodStart             pgtype.Date
+	PeriodEnd               pgtype.Date
+	AllHaveSourceReferences bool
+}
+
+func (q *Queries) FindBlockedCoverage(ctx context.Context, arg FindBlockedCoverageParams) (FindBlockedCoverageRow, error) {
+	row := q.db.QueryRow(ctx, findBlockedCoverage,
+		arg.SourceID,
+		arg.FinancialAccountID,
+		arg.IncomingStart,
+		arg.IncomingEnd,
+		arg.IncomingHasSourceReferences,
+	)
+	var i FindBlockedCoverageRow
+	err := row.Scan(
+		&i.ImportID,
+		&i.PeriodStart,
+		&i.PeriodEnd,
+		&i.AllHaveSourceReferences,
+	)
+	return i, err
+}
+
+const findConfirmedReplay = `-- name: FindConfirmedReplay :one
+SELECT i.id, i.receipt
+FROM imports i
+JOIN import_coverage c ON c.import_id = i.id AND c.financial_account_id = i.financial_account_id
+WHERE i.source_id = $1 AND i.financial_account_id = $2 AND i.file_fingerprint = $3
+  AND i.status = 'confirmed'
+ORDER BY i.confirmed_at, i.id
+LIMIT 1
+`
+
+type FindConfirmedReplayParams struct {
+	SourceID           pgtype.UUID
+	FinancialAccountID pgtype.UUID
+	FileFingerprint    []byte
+}
+
+type FindConfirmedReplayRow struct {
+	ID      pgtype.UUID
+	Receipt []byte
+}
+
+func (q *Queries) FindConfirmedReplay(ctx context.Context, arg FindConfirmedReplayParams) (FindConfirmedReplayRow, error) {
+	row := q.db.QueryRow(ctx, findConfirmedReplay, arg.SourceID, arg.FinancialAccountID, arg.FileFingerprint)
+	var i FindConfirmedReplayRow
+	err := row.Scan(&i.ID, &i.Receipt)
+	return i, err
 }
 
 const getImport = `-- name: GetImport :one
@@ -133,7 +219,7 @@ const getImportForConfirmation = `-- name: GetImportForConfirmation :one
 SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
        sources.side AS current_source_side, imports.financial_account_id,
        financial_accounts.code AS financial_account_code, financial_accounts.name AS financial_account_name,
-       imports.period_start, imports.period_end, imports.preview, imports.receipt
+       imports.period_start, imports.period_end, imports.file_fingerprint, imports.preview, imports.receipt
 FROM imports
 JOIN sources ON sources.id = imports.source_id
 JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
@@ -153,6 +239,7 @@ type GetImportForConfirmationRow struct {
 	FinancialAccountName string
 	PeriodStart          pgtype.Date
 	PeriodEnd            pgtype.Date
+	FileFingerprint      []byte
 	Preview              []byte
 	Receipt              []byte
 }
@@ -172,6 +259,7 @@ func (q *Queries) GetImportForConfirmation(ctx context.Context, id pgtype.UUID) 
 		&i.FinancialAccountName,
 		&i.PeriodStart,
 		&i.PeriodEnd,
+		&i.FileFingerprint,
 		&i.Preview,
 		&i.Receipt,
 	)
@@ -220,4 +308,89 @@ type InsertTransactionsParams struct {
 	Currency           string
 	MinorDigits        int32
 	Description        string
+}
+
+const listReferencedTransactions = `-- name: ListReferencedTransactions :many
+SELECT id, source_reference, payment_reference, transaction_date,
+       amount_minor, currency, minor_digits, description
+FROM transactions
+WHERE source_id = $1 AND financial_account_id = $2 AND source_reference = ANY($3::text[])
+`
+
+type ListReferencedTransactionsParams struct {
+	SourceID           pgtype.UUID
+	FinancialAccountID pgtype.UUID
+	SourceReferences   []string
+}
+
+type ListReferencedTransactionsRow struct {
+	ID               pgtype.UUID
+	SourceReference  pgtype.Text
+	PaymentReference pgtype.Text
+	TransactionDate  pgtype.Date
+	AmountMinor      int64
+	Currency         string
+	MinorDigits      int32
+	Description      string
+}
+
+func (q *Queries) ListReferencedTransactions(ctx context.Context, arg ListReferencedTransactionsParams) ([]ListReferencedTransactionsRow, error) {
+	rows, err := q.db.Query(ctx, listReferencedTransactions, arg.SourceID, arg.FinancialAccountID, arg.SourceReferences)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReferencedTransactionsRow
+	for rows.Next() {
+		var i ListReferencedTransactionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceReference,
+			&i.PaymentReference,
+			&i.TransactionDate,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.MinorDigits,
+			&i.Description,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveImportReplay = `-- name: ResolveImportReplay :exec
+UPDATE imports AS replay
+SET status = 'confirmed', preview = NULL, receipt = original.receipt,
+    confirmed_at = original.confirmed_at, confirmed_by = original.confirmed_by
+FROM imports AS original
+WHERE replay.id = $1 AND original.id = $2
+`
+
+type ResolveImportReplayParams struct {
+	ID         pgtype.UUID
+	OriginalID pgtype.UUID
+}
+
+func (q *Queries) ResolveImportReplay(ctx context.Context, arg ResolveImportReplayParams) error {
+	_, err := q.db.Exec(ctx, resolveImportReplay, arg.ID, arg.OriginalID)
+	return err
+}
+
+const updateImportPreview = `-- name: UpdateImportPreview :exec
+UPDATE imports SET preview = $2 WHERE id = $1
+`
+
+type UpdateImportPreviewParams struct {
+	ID      pgtype.UUID
+	Preview []byte
+}
+
+func (q *Queries) UpdateImportPreview(ctx context.Context, arg UpdateImportPreviewParams) error {
+	_, err := q.db.Exec(ctx, updateImportPreview, arg.ID, arg.Preview)
+	return err
 }
