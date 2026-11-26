@@ -13,8 +13,8 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="flex min-h-[4.75rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-[max(1.3rem,5vw)] py-3">
-        <Link href="/workspace" className="wordmark">Reconcilio</Link>
+      <header className="flex min-h-[4.75rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-panel bg-panel px-[max(1.3rem,5vw)] py-3 text-panel-foreground">
+        <Link href="/workspace" className="wordmark focus-visible:outline-panel-muted">Reconcilio</Link>
         <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-x-2 gap-y-2 desktop:gap-x-4">
           {profile?.is_admin && <CreateUserLink />}
           {profile && <AccountMenu displayName={profile.display_name} username={profile.username} />}

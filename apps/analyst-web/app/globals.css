@@ -20,6 +20,13 @@
   --panel-foreground: #f4fbf5;
   --panel-muted: #cee2d7;
   --panel-divider: #709386;
+  --panel-hover: #245244;
+  --sidebar: #e4eee7;
+  --sidebar-foreground: #243d34;
+  --sidebar-divider: #c6d7cb;
+  --sidebar-hover: #d8e8de;
+  --sidebar-active: #cfe3d6;
+  --sidebar-active-foreground: #104c3b;
   --destructive: #963228;
 }
 
@@ -42,6 +49,13 @@
   --color-panel-foreground: var(--panel-foreground);
   --color-panel-muted: var(--panel-muted);
   --color-panel-divider: var(--panel-divider);
+  --color-panel-hover: var(--panel-hover);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-divider: var(--sidebar-divider);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
   --color-destructive: var(--destructive);
   --breakpoint-desktop: 45rem;
   --radius-md: 0.45rem;
