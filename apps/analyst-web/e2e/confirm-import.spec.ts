@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { verifyOpenTransactions } from "./open-transactions";
+
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
 test.use({ locale: "en-US" });
@@ -78,6 +80,9 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page.getByText("ERP-001", { exact: true })).toBeVisible();
   await expect(page.getByText("CARD-001", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recorded evidence" })).toBeVisible();
+
+  await verifyOpenTransactions(page);
+  await page.goto(detailURL);
 
   await page.getByLabel("Language").selectOption("pt-BR");
   await expect(page.getByRole("heading", { name: "Detalhes da conciliação" })).toBeVisible();
