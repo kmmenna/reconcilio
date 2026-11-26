@@ -13,7 +13,13 @@ export default async function LoginPage() {
         aria-label="Reconcilio"
         className="flex flex-col justify-between gap-[1.6rem] bg-panel px-[1.3rem] pt-5 pb-[1.6rem] text-panel-foreground desktop:gap-16 desktop:px-[max(2rem,6vw)] desktop:py-12"
       >
-        <span className="wordmark">Reconcilio</span>
+        <span
+          className="wordmark desktop:flex-1 desktop:justify-center desktop:gap-[0.28em]
+            desktop:text-[clamp(2.25rem,4.5vw,5rem)] desktop:leading-none desktop:before:size-[0.86em]
+            desktop:before:shrink-0 desktop:before:rounded-[0.2em] desktop:before:border-[0.085em]"
+        >
+          Reconcilio
+        </span>
         <div className="max-w-[27rem] border-t border-panel-divider pt-4 desktop:pt-6">
           <p className="text-[1.7rem] leading-[1.08] font-[640] tracking-[-0.04em] desktop:text-[2.6rem]">
             {t("purpose")}
