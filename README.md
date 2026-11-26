@@ -1,6 +1,6 @@
 # Reconcilio
 
-Reconcilio is a workspace for financial transaction reconciliation. The current slice lets a local administrator sign in and open the protected workspace.
+Reconcilio is a workspace for financial transaction reconciliation. Sign in to preview financial records from a CSV before importing Transactions.
 
 ## Run locally
 
@@ -12,6 +12,8 @@ docker compose exec backend reconcilio bootstrap-admin
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and sign in as `admin` with the generated password. The bootstrap command prints that password only when creating the account. Preserve it for later sign-ins.
+
+To try the preview workflow, open **Import CSV** in the workspace and use the [Corporate Card demo files](examples/demo/README.md).
 
 The demo binds the browser app to loopback. If you change `ANALYST_WEB_PORT`, set `WEB_ORIGIN` to the exact URL you open. The API generates a signing key at startup when `JWT_SECRET` is unset, so restarting the API then requires signing in again. Set a randomly generated secret of at least 32 bytes to keep existing tokens valid through a restart.
 
@@ -46,7 +48,7 @@ mise run build
 mise run test
 ```
 
-Run `mise run db:generate` after changing the identity SQL or schema. Install local Git hooks with `mise exec -- lefthook install`.
+Run `mise run db:generate` after changing module SQL or the schema. Install local Git hooks with `mise exec -- lefthook install`.
 
 For the browser smoke test, install Playwright Chromium and run the smoke task. It creates an isolated Compose project on port 3100 and removes its containers and test volume afterward. Set `RECONCILIO_SMOKE_PORT` if the port is occupied.
 
