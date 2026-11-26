@@ -50,7 +50,7 @@ func TestManualAccountReprocessing(t *testing.T) {
 
 func TestBusyFinancialAccountDefersReprocessing(t *testing.T) {
 	pool, handler, token := jobTestAPI(t)
-	firstAccount, secondAccount := twoJobAccounts(t, pool, handler, token)
+	firstAccount, secondAccount := twoJobAccounts(t, handler, token)
 
 	processor := reconciliation.New(pool)
 	firstStarted, letFirstFinish := make(chan struct{}), make(chan struct{})
@@ -92,7 +92,7 @@ func TestBusyFinancialAccountDefersReprocessing(t *testing.T) {
 
 func TestExpiredAttemptCannotCommitOrReleaseSuccessorLease(t *testing.T) {
 	pool, handler, token := jobTestAPI(t)
-	account, _ := twoJobAccounts(t, pool, handler, token)
+	account, _ := twoJobAccounts(t, handler, token)
 	importJobTestTransactions(t, pool, handler, token, account)
 
 	processor := reconciliation.New(pool)
@@ -146,7 +146,7 @@ func TestExpiredAttemptCannotCommitOrReleaseSuccessorLease(t *testing.T) {
 
 func TestReprocessingRetriesAndKeepsPartialResults(t *testing.T) {
 	pool, handler, token := jobTestAPI(t)
-	retryAccount, failingAccount := twoJobAccounts(t, pool, handler, token)
+	retryAccount, failingAccount := twoJobAccounts(t, handler, token)
 	importJobTestTransactions(t, pool, handler, token, retryAccount)
 	importJobTestTransactions(t, pool, handler, token, failingAccount)
 	execJobTestSQL(t, pool, `CREATE SEQUENCE proposal_fault_once`)
@@ -281,7 +281,7 @@ func importJobTestTransactions(t *testing.T, pool *pgxpool.Pool, handler http.Ha
 
 func TestJobSummaryRecoversBeforeWorkerStartupAndAfterRiverCleanup(t *testing.T) {
 	pool, handler, token := jobTestAPI(t)
-	account, _ := twoJobAccounts(t, pool, handler, token)
+	account, _ := twoJobAccounts(t, handler, token)
 	id := enqueueReprocessing(t, handler, token, account)
 	client := jobTestRiver(t, pool)
 	cancelled, err := client.JobCancel(t.Context(), id)
@@ -302,7 +302,7 @@ func TestJobSummaryRecoversBeforeWorkerStartupAndAfterRiverCleanup(t *testing.T)
 
 func TestWorkerRecoversSummaryDuringExecution(t *testing.T) {
 	pool, handler, token := jobTestAPI(t)
-	account, _ := twoJobAccounts(t, pool, handler, token)
+	account, _ := twoJobAccounts(t, handler, token)
 	startJobWorker(t, pool, reconciliation.New(pool))
 	client := jobTestRiver(t, pool)
 	scheduled, err := client.Insert(t.Context(), reconciliation.ReconcileArgs{FinancialAccountID: account},
@@ -353,25 +353,20 @@ func jobTestRiver(t *testing.T, pool *pgxpool.Pool) *river.Client[pgx.Tx] {
 	return client
 }
 
-func twoJobAccounts(t *testing.T, pool *pgxpool.Pool, handler http.Handler, token string) (string, string) {
+func twoJobAccounts(t *testing.T, handler http.Handler, token string) (string, string) {
 	t.Helper()
-	execJobTestSQL(t, pool, `INSERT INTO financial_accounts (code, name)
-		VALUES ('test-independent-account', 'Independent Account')`)
+	var independent catalog.FinancialAccount
+	readResponse(t, jobRequest(t, handler, http.MethodPost, "/api/financial-accounts", token,
+		`{"code":"test-independent-account","name":"Independent Account"}`), http.StatusCreated, &independent)
 	var accounts []catalog.FinancialAccount
 	readResponse(t, jobRequest(t, handler, http.MethodGet, "/api/financial-accounts", token, ""), http.StatusOK, &accounts)
-	var first, second string
 	for _, account := range accounts {
-		switch account.Code {
-		case "corporate-card":
-			first = account.ID
-		case "test-independent-account":
-			second = account.ID
+		if account.Code == "corporate-card" {
+			return account.ID, independent.ID
 		}
 	}
-	if first == "" || second == "" {
-		t.Fatalf("expected both Financial Accounts: %+v", accounts)
-	}
-	return first, second
+	t.Fatalf("expected the demo Financial Account in %+v", accounts)
+	return "", ""
 }
 
 func execJobTestSQL(t *testing.T, pool *pgxpool.Pool, statement string, args ...any) {

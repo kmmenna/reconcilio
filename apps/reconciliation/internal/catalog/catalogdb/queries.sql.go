@@ -11,6 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createFinancialAccount = `-- name: CreateFinancialAccount :one
+INSERT INTO financial_accounts (code, name) VALUES ($1, $2)
+RETURNING id, code, name
+`
+
+type CreateFinancialAccountParams struct {
+	Code string
+	Name string
+}
+
+func (q *Queries) CreateFinancialAccount(ctx context.Context, arg CreateFinancialAccountParams) (FinancialAccount, error) {
+	row := q.db.QueryRow(ctx, createFinancialAccount, arg.Code, arg.Name)
+	var i FinancialAccount
+	err := row.Scan(&i.ID, &i.Code, &i.Name)
+	return i, err
+}
+
+const createSource = `-- name: CreateSource :one
+INSERT INTO sources (name, side) VALUES ($1, $2)
+RETURNING id, name, side
+`
+
+type CreateSourceParams struct {
+	Name string
+	Side string
+}
+
+func (q *Queries) CreateSource(ctx context.Context, arg CreateSourceParams) (Source, error) {
+	row := q.db.QueryRow(ctx, createSource, arg.Name, arg.Side)
+	var i Source
+	err := row.Scan(&i.ID, &i.Name, &i.Side)
+	return i, err
+}
+
 const getFinancialAccount = `-- name: GetFinancialAccount :one
 SELECT id, code, name
 FROM financial_accounts
@@ -64,21 +98,35 @@ func (q *Queries) ListFinancialAccounts(ctx context.Context) ([]FinancialAccount
 }
 
 const listSources = `-- name: ListSources :many
-SELECT id, name, side
+SELECT id, name, side, NOT EXISTS (
+    SELECT 1 FROM imports WHERE source_id = sources.id AND status = 'confirmed'
+) AS side_editable
 FROM sources
 ORDER BY name, id
 `
 
-func (q *Queries) ListSources(ctx context.Context) ([]Source, error) {
+type ListSourcesRow struct {
+	ID           pgtype.UUID
+	Name         string
+	Side         string
+	SideEditable bool
+}
+
+func (q *Queries) ListSources(ctx context.Context) ([]ListSourcesRow, error) {
 	rows, err := q.db.Query(ctx, listSources)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Source
+	var items []ListSourcesRow
 	for rows.Next() {
-		var i Source
-		if err := rows.Scan(&i.ID, &i.Name, &i.Side); err != nil {
+		var i ListSourcesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Side,
+			&i.SideEditable,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -115,4 +163,72 @@ func (q *Queries) LockFinancialAccounts(ctx context.Context, dollar_1 []pgtype.U
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockSourceForEdit = `-- name: LockSourceForEdit :one
+SELECT id, name, side FROM sources WHERE id = $1 FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockSourceForEdit(ctx context.Context, id pgtype.UUID) (Source, error) {
+	row := q.db.QueryRow(ctx, lockSourceForEdit, id)
+	var i Source
+	err := row.Scan(&i.ID, &i.Name, &i.Side)
+	return i, err
+}
+
+const lockSourceForImport = `-- name: LockSourceForImport :one
+SELECT id, name, side FROM sources WHERE id = $1 FOR SHARE
+`
+
+func (q *Queries) LockSourceForImport(ctx context.Context, id pgtype.UUID) (Source, error) {
+	row := q.db.QueryRow(ctx, lockSourceForImport, id)
+	var i Source
+	err := row.Scan(&i.ID, &i.Name, &i.Side)
+	return i, err
+}
+
+const renameFinancialAccount = `-- name: RenameFinancialAccount :one
+UPDATE financial_accounts SET name = $2 WHERE id = $1
+RETURNING id, code, name
+`
+
+type RenameFinancialAccountParams struct {
+	ID   pgtype.UUID
+	Name string
+}
+
+func (q *Queries) RenameFinancialAccount(ctx context.Context, arg RenameFinancialAccountParams) (FinancialAccount, error) {
+	row := q.db.QueryRow(ctx, renameFinancialAccount, arg.ID, arg.Name)
+	var i FinancialAccount
+	err := row.Scan(&i.ID, &i.Code, &i.Name)
+	return i, err
+}
+
+const sourceHasConfirmedImport = `-- name: SourceHasConfirmedImport :one
+SELECT EXISTS (SELECT 1 FROM imports WHERE source_id = $1 AND status = 'confirmed')
+`
+
+func (q *Queries) SourceHasConfirmedImport(ctx context.Context, sourceID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, sourceHasConfirmedImport, sourceID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const updateSource = `-- name: UpdateSource :one
+UPDATE sources SET name = $2, side = $3 WHERE id = $1
+RETURNING id, name, side
+`
+
+type UpdateSourceParams struct {
+	ID   pgtype.UUID
+	Name string
+	Side string
+}
+
+func (q *Queries) UpdateSource(ctx context.Context, arg UpdateSourceParams) (Source, error) {
+	row := q.db.QueryRow(ctx, updateSource, arg.ID, arg.Name, arg.Side)
+	var i Source
+	err := row.Scan(&i.ID, &i.Name, &i.Side)
+	return i, err
 }

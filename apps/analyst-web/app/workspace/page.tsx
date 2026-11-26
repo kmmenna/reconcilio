@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button";
 import { getWorkspaceProfile } from "@/lib/workspace";
 
 export default async function WorkspacePage() {
-  const [profile, t, imports, reconciliation, review, transactions] = await Promise.all([
+  const [profile, t, imports, reconciliation, review, transactions, catalog] = await Promise.all([
     getWorkspaceProfile(),
     getTranslations("Workspace"),
     getTranslations("Imports"),
     getTranslations("Reconciliation"),
     getTranslations("Review"),
     getTranslations("Transactions"),
+    getTranslations("Catalog"),
   ]);
 
   return (
@@ -42,6 +43,9 @@ export default async function WorkspacePage() {
             </Button>
             <Button asChild variant="outline" className="h-11 text-base">
               <Link href="/workspace/transactions">{transactions("title")}</Link>
+            </Button>
+            <Button asChild variant="outline" className="h-11 text-base">
+              <Link href="/workspace/catalog">{catalog("title")}</Link>
             </Button>
             <AccountLinks isAdmin={profile.is_admin} />
           </div>

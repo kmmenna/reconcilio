@@ -1,11 +1,12 @@
 import { useLocale, useTranslations } from "next-intl";
 
-import type { ConflictField, ImportConflict, TransactionValues } from "@/lib/imports";
+import type { ConflictField, FinancialAccount, ImportConflict, TransactionValues } from "@/lib/imports";
 import { formatMoney, formatTransactionDate } from "@/lib/transaction-format";
 
-export function ImportConflicts({ conflicts }: { conflicts: ImportConflict[] }) {
+export function ImportConflicts({ accounts, conflicts }: { accounts: FinancialAccount[]; conflicts: ImportConflict[] }) {
   const t = useTranslations("Imports");
   const locale = useLocale();
+  const codes = new Map(accounts.map(({ id, code }) => [id, code]));
 
   function value(record: TransactionValues, field: ConflictField) {
     switch (field) {
@@ -28,6 +29,9 @@ export function ImportConflicts({ conflicts }: { conflicts: ImportConflict[] }) 
             <caption className="border-b border-border px-4 py-3 text-left">
               <span className="font-semibold wrap-anywhere">{conflict.stored.source_reference}</span>
               <span className="ms-3 text-sm text-muted-foreground">{t("conflictLine", { line: conflict.line })}</span>
+              {accounts.length > 1 && (
+                <span className="ms-3 font-mono text-xs text-muted-foreground wrap-anywhere">{codes.get(conflict.financial_account_id)}</span>
+              )}
             </caption>
             <thead className="bg-accent text-sm">
               <tr>

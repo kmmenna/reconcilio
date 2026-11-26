@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const assignImportAccounts = `-- name: AssignImportAccounts :exec
+INSERT INTO import_financial_accounts (import_id, financial_account_id)
+SELECT $1::uuid, unnest($2::uuid[])
+`
+
+type AssignImportAccountsParams struct {
+	ImportID   pgtype.UUID
+	AccountIds []pgtype.UUID
+}
+
+func (q *Queries) AssignImportAccounts(ctx context.Context, arg AssignImportAccountsParams) error {
+	_, err := q.db.Exec(ctx, assignImportAccounts, arg.ImportID, arg.AccountIds)
+	return err
+}
+
 const cancelImport = `-- name: CancelImport :exec
 UPDATE imports SET status = 'canceled', preview = NULL, receipt = $2 WHERE id = $1
 `
@@ -50,29 +65,26 @@ func (q *Queries) ConfirmImport(ctx context.Context, arg ConfirmImportParams) er
 
 const createPendingImport = `-- name: CreatePendingImport :one
 INSERT INTO imports (
-    source_id, source_side, financial_account_id, period_start, period_end,
-    file_fingerprint, preview, created_by
+    source_id, source_side, period_start, period_end, file_fingerprint, preview, created_by
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id
 `
 
 type CreatePendingImportParams struct {
-	SourceID           pgtype.UUID
-	SourceSide         string
-	FinancialAccountID pgtype.UUID
-	PeriodStart        pgtype.Date
-	PeriodEnd          pgtype.Date
-	FileFingerprint    []byte
-	Preview            []byte
-	CreatedBy          pgtype.UUID
+	SourceID        pgtype.UUID
+	SourceSide      string
+	PeriodStart     pgtype.Date
+	PeriodEnd       pgtype.Date
+	FileFingerprint []byte
+	Preview         []byte
+	CreatedBy       pgtype.UUID
 }
 
 func (q *Queries) CreatePendingImport(ctx context.Context, arg CreatePendingImportParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createPendingImport,
 		arg.SourceID,
 		arg.SourceSide,
-		arg.FinancialAccountID,
 		arg.PeriodStart,
 		arg.PeriodEnd,
 		arg.FileFingerprint,
@@ -131,17 +143,23 @@ func (q *Queries) FindBlockedCoverage(ctx context.Context, arg FindBlockedCovera
 const findConfirmedReplay = `-- name: FindConfirmedReplay :one
 SELECT i.id, i.receipt
 FROM imports i
-JOIN import_coverage c ON c.import_id = i.id AND c.financial_account_id = i.financial_account_id
-WHERE i.source_id = $1 AND i.financial_account_id = $2 AND i.file_fingerprint = $3
-  AND i.status = 'confirmed'
+WHERE i.source_id = $1 AND i.file_fingerprint = $2 AND i.status = 'confirmed'
+  AND ARRAY(
+    SELECT ia.financial_account_id
+    FROM import_financial_accounts ia
+    WHERE ia.import_id = i.id
+    ORDER BY ia.financial_account_id
+  ) = $3::uuid[]
+  -- Imports resolved as replays share the original receipt and have no coverage of their own.
+  AND EXISTS (SELECT 1 FROM import_coverage c WHERE c.import_id = i.id)
 ORDER BY i.confirmed_at, i.id
 LIMIT 1
 `
 
 type FindConfirmedReplayParams struct {
-	SourceID           pgtype.UUID
-	FinancialAccountID pgtype.UUID
-	FileFingerprint    []byte
+	SourceID        pgtype.UUID
+	FileFingerprint []byte
+	AccountIds      []pgtype.UUID
 }
 
 type FindConfirmedReplayRow struct {
@@ -150,7 +168,7 @@ type FindConfirmedReplayRow struct {
 }
 
 func (q *Queries) FindConfirmedReplay(ctx context.Context, arg FindConfirmedReplayParams) (FindConfirmedReplayRow, error) {
-	row := q.db.QueryRow(ctx, findConfirmedReplay, arg.SourceID, arg.FinancialAccountID, arg.FileFingerprint)
+	row := q.db.QueryRow(ctx, findConfirmedReplay, arg.SourceID, arg.FileFingerprint, arg.AccountIds)
 	var i FindConfirmedReplayRow
 	err := row.Scan(&i.ID, &i.Receipt)
 	return i, err
@@ -158,28 +176,23 @@ func (q *Queries) FindConfirmedReplay(ctx context.Context, arg FindConfirmedRepl
 
 const getImport = `-- name: GetImport :one
 SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
-       imports.financial_account_id, financial_accounts.code AS financial_account_code,
-       financial_accounts.name AS financial_account_name,
-       imports.period_start, imports.period_end, imports.preview, imports.receipt
+       imports.period_start, imports.period_end, imports.file_fingerprint, imports.preview, imports.receipt
 FROM imports
 JOIN sources ON sources.id = imports.source_id
-JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
 WHERE imports.id = $1
 `
 
 type GetImportRow struct {
-	ID                   pgtype.UUID
-	Status               string
-	SourceID             pgtype.UUID
-	SourceName           string
-	SourceSide           string
-	FinancialAccountID   pgtype.UUID
-	FinancialAccountCode string
-	FinancialAccountName string
-	PeriodStart          pgtype.Date
-	PeriodEnd            pgtype.Date
-	Preview              []byte
-	Receipt              []byte
+	ID              pgtype.UUID
+	Status          string
+	SourceID        pgtype.UUID
+	SourceName      string
+	SourceSide      string
+	PeriodStart     pgtype.Date
+	PeriodEnd       pgtype.Date
+	FileFingerprint []byte
+	Preview         []byte
+	Receipt         []byte
 }
 
 func (q *Queries) GetImport(ctx context.Context, id pgtype.UUID) (GetImportRow, error) {
@@ -191,72 +204,6 @@ func (q *Queries) GetImport(ctx context.Context, id pgtype.UUID) (GetImportRow, 
 		&i.SourceID,
 		&i.SourceName,
 		&i.SourceSide,
-		&i.FinancialAccountID,
-		&i.FinancialAccountCode,
-		&i.FinancialAccountName,
-		&i.PeriodStart,
-		&i.PeriodEnd,
-		&i.Preview,
-		&i.Receipt,
-	)
-	return i, err
-}
-
-const getImportAccountID = `-- name: GetImportAccountID :one
-SELECT financial_account_id
-FROM imports
-WHERE id = $1
-`
-
-func (q *Queries) GetImportAccountID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getImportAccountID, id)
-	var financial_account_id pgtype.UUID
-	err := row.Scan(&financial_account_id)
-	return financial_account_id, err
-}
-
-const getImportForConfirmation = `-- name: GetImportForConfirmation :one
-SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
-       sources.side AS current_source_side, imports.financial_account_id,
-       financial_accounts.code AS financial_account_code, financial_accounts.name AS financial_account_name,
-       imports.period_start, imports.period_end, imports.file_fingerprint, imports.preview, imports.receipt
-FROM imports
-JOIN sources ON sources.id = imports.source_id
-JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
-WHERE imports.id = $1
-FOR SHARE OF sources
-`
-
-type GetImportForConfirmationRow struct {
-	ID                   pgtype.UUID
-	Status               string
-	SourceID             pgtype.UUID
-	SourceName           string
-	SourceSide           string
-	CurrentSourceSide    string
-	FinancialAccountID   pgtype.UUID
-	FinancialAccountCode string
-	FinancialAccountName string
-	PeriodStart          pgtype.Date
-	PeriodEnd            pgtype.Date
-	FileFingerprint      []byte
-	Preview              []byte
-	Receipt              []byte
-}
-
-func (q *Queries) GetImportForConfirmation(ctx context.Context, id pgtype.UUID) (GetImportForConfirmationRow, error) {
-	row := q.db.QueryRow(ctx, getImportForConfirmation, id)
-	var i GetImportForConfirmationRow
-	err := row.Scan(
-		&i.ID,
-		&i.Status,
-		&i.SourceID,
-		&i.SourceName,
-		&i.SourceSide,
-		&i.CurrentSourceSide,
-		&i.FinancialAccountID,
-		&i.FinancialAccountCode,
-		&i.FinancialAccountName,
 		&i.PeriodStart,
 		&i.PeriodEnd,
 		&i.FileFingerprint,
@@ -308,6 +255,34 @@ type InsertTransactionsParams struct {
 	Currency           string
 	MinorDigits        int32
 	Description        string
+}
+
+const listImportAccounts = `-- name: ListImportAccounts :many
+SELECT a.id, a.code, a.name
+FROM import_financial_accounts ia
+JOIN financial_accounts a ON a.id = ia.financial_account_id
+WHERE ia.import_id = $1
+ORDER BY a.id
+`
+
+func (q *Queries) ListImportAccounts(ctx context.Context, importID pgtype.UUID) ([]FinancialAccount, error) {
+	rows, err := q.db.Query(ctx, listImportAccounts, importID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FinancialAccount
+	for rows.Next() {
+		var i FinancialAccount
+		if err := rows.Scan(&i.ID, &i.Code, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listReferencedTransactions = `-- name: ListReferencedTransactions :many

@@ -12,12 +12,22 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByRole("link", { name: "Reconciliations" }).click();
+  const reconciliations = page.getByRole("link", { name: "Reconciliations" });
+  await expect(reconciliations).toBeVisible();
+
+  const account = { name: "Reprocessing Test Account", code: "reprocessing-smoke" };
+  const created = await page.request.post(`${origin}/api/catalog/financial-accounts`, {
+    headers: { Origin: origin },
+    data: account,
+  });
+  expect(created.status()).toBe(201);
+  const { id: accountID } = await created.json() as { id: string };
+  await page.goto(`${origin}/workspace/reconciliations`);
 
   const reprocess = page.getByRole("button", { name: "Reprocess account" });
   await expect(reprocess).toBeDisabled();
-  const accountID = await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-  const denied = await page.request.post(`${origin}/api/financial-accounts/${accountID[0]}/reprocess`, {
+  await page.getByLabel("Financial Account").selectOption(accountID);
+  const denied = await page.request.post(`${origin}/api/financial-accounts/${accountID}/reprocess`, {
     headers: { Origin: "https://example.invalid" },
   });
   expect(denied.status()).toBe(403);
@@ -31,9 +41,9 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await expect(page).toHaveURL(/\/workspace\/jobs\/\d+$/);
   const jobURL = page.url();
   await expect(page.getByRole("status")).toHaveText("Completed", { timeout: 15_000 });
-  await expect(page.getByText("Corporate Card")).toBeVisible();
-  await expect(page.getByText(/automatic Reconciliation/)).toBeVisible();
-  await expect(page.getByText(/new Match Proposal/)).toBeVisible();
+  await expect(page.getByText(account.name, { exact: true })).toBeVisible();
+  await expect(page.getByText("No automatic Reconciliations", { exact: true })).toBeVisible();
+  await expect(page.getByText("No new Match Proposals", { exact: true })).toBeVisible();
   const completedAt = page.locator("time");
   const timestamp = await completedAt.getAttribute("datetime");
   const englishTime = await completedAt.textContent();
@@ -46,7 +56,8 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await expect(page).toHaveURL(jobURL);
   await expect(completedAt).toHaveAttribute("datetime", timestamp);
   await expect(completedAt).not.toHaveText(englishTime);
-  await expect(page.getByText(/propostas? de conciliação/)).toBeVisible();
+  await expect(page.getByText("Nenhuma conciliação automática", { exact: true })).toBeVisible();
+  await expect(page.getByText("Nenhuma nova proposta de conciliação", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("status")).toHaveText("Concluído");
   await expect(page).toHaveURL(jobURL);

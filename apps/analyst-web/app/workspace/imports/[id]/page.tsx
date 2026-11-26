@@ -22,7 +22,12 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
   const isPending = preview?.status === "pending";
   const settledAt = confirmed ? preview.confirmed_at : canceled ? preview.canceled_at : null;
   const date = (value: string) => formatTransactionDate(value, locale);
-  const columns = ["transaction_date", "description", "amount", "source_reference", "payment_reference"] as const;
+  const accounts = preview?.financial_accounts ?? (preview?.financial_account ? [preview.financial_account] : []);
+  const mixed = accounts.length > 1;
+  const codes = new Map(accounts.map(({ id, code }) => [id, code]));
+  const columns = [
+    "transaction_date", "description", "amount", ...(mixed ? ["financial_account"] as const : []), "source_reference", "payment_reference",
+  ] as const;
 
   return (
     <main className="workspace">
@@ -51,13 +56,18 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
               {([
                 { field: "source_id", value: preview.source.name },
                 { field: "source_side", value: t(`sides.${preview.source.side}`) },
-                { field: "financial_account_id", value: preview.financial_account.name },
+                { field: "financial_account_id", value: accounts.map((account) => (
+                  <div key={account.id}>
+                    <span>{account.name}</span>
+                    <span className="block font-mono text-xs font-normal text-muted-foreground">{account.code}</span>
+                  </div>
+                )) },
                 { field: "period_start", value: <time dateTime={preview.period_start}>{date(preview.period_start)}</time> },
                 { field: "period_end", value: <time dateTime={preview.period_end}>{date(preview.period_end)}</time> },
               ] as const).map(({ field, value }) => (
                 <div key={field} className={`min-w-0 ${field === "financial_account_id" ? "col-span-2 desktop:col-span-1" : ""}`}>
-                  <dt className="text-sm text-muted-foreground">{t(`fields.${field}`)}</dt>
-                  <dd className="mt-1 font-semibold wrap-anywhere">{value}</dd>
+                  <dt className="text-sm text-muted-foreground">{mixed && field === "financial_account_id" ? t("multipleAccounts") : t(`fields.${field}`)}</dt>
+                  <dd className="mt-1 space-y-2 font-semibold wrap-anywhere">{value}</dd>
                 </div>
               ))}
               <div className="col-span-full min-w-0 border-t border-border pt-3">
@@ -75,12 +85,12 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
             </dl>
           </div>
 
-          {isPending && <ConfirmImport id={preview.id} initialConflicts={preview.conflicts ?? []} />}
+          {isPending && <ConfirmImport key={preview.id} id={preview.id} accounts={accounts} initialConflicts={preview.conflicts ?? []} />}
           {!isPending && preview.conflicts?.length ? (
             <section className="mt-8" aria-labelledby="recorded-decision">
               <h2 className="text-lg font-semibold" id="recorded-decision">{t("recordedDecision")}</h2>
               <p className="mt-1 mb-4 max-w-prose text-muted-foreground">{t(confirmed ? "keptSummary" : "canceledConflictSummary")}</p>
-              <ImportConflicts conflicts={preview.conflicts} />
+              <ImportConflicts accounts={accounts} conflicts={preview.conflicts} />
             </section>
           ) : null}
 
@@ -131,6 +141,12 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                       <td className="col-start-2 row-start-1 text-right font-medium tabular-nums wrap-anywhere desktop:px-4 desktop:py-3 desktop:whitespace-nowrap" role="cell">
                         {formatMoney(row.amount, row.currency, locale)}
                       </td>
+                      {mixed && (
+                        <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
+                          <span className="mr-2 desktop:hidden">{t("fields.financial_account")}</span>
+                          <span className="font-mono text-xs">{codes.get(row.financial_account_id ?? "")}</span>
+                        </td>
+                      )}
                       <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
                         <span className="mr-2 desktop:hidden">{t("fields.source_reference")}</span>
                         {row.source_reference || t("absentReference")}
