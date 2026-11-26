@@ -79,6 +79,26 @@
 }
 
 @layer components {
+  .form-control {
+    @apply min-w-0 rounded-md border border-input bg-card text-foreground outline-none;
+    @apply focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring;
+    @apply disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-muted-foreground;
+    @apply aria-invalid:border-destructive;
+  }
+
+  .choice-menu {
+    @apply z-50 overflow-y-auto rounded-md border border-border bg-card p-1 text-foreground outline-none;
+  }
+
+  .choice-option {
+    @apply flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-sm outline-none;
+    @apply data-highlighted:bg-accent data-disabled:cursor-not-allowed data-disabled:text-muted-foreground;
+  }
+
+  .choice-option > :first-child {
+    @apply min-w-0 wrap-anywhere;
+  }
+
   .wordmark {
     @apply inline-flex items-center gap-[0.65rem] text-[1.2rem] font-bold tracking-[-0.025em];
   }

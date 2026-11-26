@@ -45,11 +45,11 @@ export function SignInForm() {
     <form className="mt-8 grid gap-5" method="post" noValidate onSubmit={signIn}>
       <div className="grid gap-2">
         <Label htmlFor="username" className="text-[0.95rem] leading-normal font-semibold">{t("username")}</Label>
-        <Input id="username" name="username" autoComplete="username" className="h-12 bg-card shadow-none md:text-base" required />
+        <Input id="username" name="username" autoComplete="username" className="h-12 md:text-base" required />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="password" className="text-[0.95rem] leading-normal font-semibold">{t("password")}</Label>
-        <Input id="password" name="password" type="password" autoComplete="current-password" className="h-12 bg-card shadow-none md:text-base" required />
+        <Input id="password" name="password" type="password" autoComplete="current-password" className="h-12 md:text-base" required />
       </div>
       {message && <p className="text-sm text-destructive" role="alert">{message}</p>}
       <Button className="h-12 text-base font-semibold" type="submit" disabled={busy}>

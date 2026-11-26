@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+import { selectFormOption } from "./form-select";
 import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
-test.use({ locale: "en-US" });
+test.use({ locale: "en-US", colorScheme: "dark" });
 
 test("manages the catalog and confirms a mixed CSV after refreshing a changed Source side", async ({ page }) => {
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
@@ -33,13 +34,21 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
 
   await sources.getByRole("button", { name: "Add Source" }).click();
   await sources.getByLabel("Name", { exact: true }).fill("Sistema da Matriz");
-  await sources.getByLabel("Side", { exact: true }).selectOption("internal");
+  await selectFormOption(sources.getByRole("combobox", { name: "Side", exact: true }), "Internal");
   await sources.getByRole("button", { name: "Save" }).click();
   await expect(sources.getByText("Sistema da Matriz", { exact: true })).toBeVisible();
 
   await navigation.getByRole("link", { name: "Import CSV", exact: true }).click();
-  await page.getByLabel("Source", { exact: true }).selectOption({ label: "Sistema da Matriz" });
-  await page.getByLabel("Financial Account", { exact: true }).selectOption({ label: "Use account codes from CSV" });
+  const fileInput = page.getByLabel("CSV file", { exact: true });
+  const codeHelp = page.getByText("Use a registered Financial Account code", { exact: false });
+  const source = page.getByRole("combobox", { name: "Source", exact: true });
+  await expect(source).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(page.getByLabel("Start date", { exact: true })).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(codeHelp).toHaveCount(0);
+  await selectFormOption(source, "Sistema da Matriz");
+  await selectFormOption(page.getByRole("combobox", { name: "Financial Account", exact: true }), "Use account codes from CSV");
+  await expect(codeHelp).toBeVisible();
+  expect(await fileInput.evaluate((input) => Boolean(input.compareDocumentPosition(document.getElementById("csv-account-help")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   await page.getByLabel("Start date", { exact: true }).fill("11/1/2026");
   await page.getByLabel("End date", { exact: true }).fill("11/5/2026");
   const file = (code: string) => ({
@@ -51,7 +60,15 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
       `MIXED-001,,2026-11-03,240,JPY,Recebimento,${code}\n`,
     ),
   });
-  await page.getByLabel("CSV file").setInputFiles(file("missing-bank"));
+  await fileInput.setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("notes") });
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText("Choose one CSV file.");
+  const chooser = page.waitForEvent("filechooser");
+  await fileInput.press("Space");
+  const selected = file("missing-bank");
+  await (await chooser).setFiles(selected);
+  await expect(page.getByText("Choose one CSV file.")).toHaveCount(0);
+  const size = new Intl.NumberFormat("en", { style: "unit", unit: "byte", unitDisplay: "long" }).format(selected.buffer.length);
+  await expect(page.getByText(`mixed.csv · ${size}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Preview CSV" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Line 3 · Financial Account");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("missing-bank");
@@ -60,7 +77,17 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await expect(page.getByRole("main").getByRole("alert")).toContainText("O código missing-bank não está cadastrado.");
   await changeWorkspaceLanguage(page, "en");
 
-  await page.getByLabel("CSV file").setInputFiles(file("operating-bank"));
+  const dropped = file("operating-bank");
+  const transfer = await page.evaluateHandle(({ name, mimeType, text }) => {
+    const data = new DataTransfer();
+    data.items.add(new File([text], name, { type: mimeType }));
+    return data;
+  }, { name: dropped.name, mimeType: dropped.mimeType, text: dropped.buffer.toString() });
+  await fileInput.dispatchEvent("dragover", { dataTransfer: transfer });
+  await fileInput.dispatchEvent("drop", { dataTransfer: transfer });
+  await transfer.dispose();
+  const droppedSize = new Intl.NumberFormat("en", { style: "unit", unit: "byte", unitDisplay: "long" }).format(dropped.buffer.length);
+  await expect(page.getByText(`mixed.csv · ${droppedSize}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Preview CSV" }).click();
   await expect(page.getByRole("heading", { name: "Import preview" })).toBeVisible();
   await expect(page.getByText("Sistema da Matriz", { exact: true })).toBeVisible();
@@ -71,8 +98,9 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await page.goto(`${origin}/workspace/catalog`);
   const sourceRow = sources.getByRole("listitem").filter({ hasText: "Sistema da Matriz" });
   await sourceRow.getByRole("button", { name: "Edit Sistema da Matriz" }).click();
-  await sources.getByLabel("Side", { exact: true }).selectOption("external");
+  await selectFormOption(sources.getByRole("combobox", { name: "Side", exact: true }), "External");
   await sources.getByRole("button", { name: "Save" }).click();
+  await expect(sourceRow.getByRole("button", { name: "Edit Sistema da Matriz" })).toBeVisible();
   await expect(sourceRow.getByText("External", { exact: true })).toBeVisible();
 
   await page.goto(originalURL);

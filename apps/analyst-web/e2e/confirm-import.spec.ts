@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { chooseDemoImport, selectFormOption } from "./form-select";
 import { verifyOpenTransactions } from "./open-transactions";
 import { changeWorkspaceLanguage } from "./workspace-language";
 
@@ -25,8 +26,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     ["Demo ERP", "internal.csv", 3],
     ["Demo Card Statement", "external.csv", 4],
   ] as const) {
-    await page.getByLabel("Source", { exact: true }).selectOption({ label: source });
-    await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
+    await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), source);
+    await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
     await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
     await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(resolve(__dirname, "../../../examples/demo", fixture));
@@ -84,8 +85,16 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   }
 
   await expect(page.getByRole("heading", { name: "Reconciliations" })).toBeVisible();
-  await expect(page.getByLabel("Financial Account")).toHaveValue(/^[0-9a-f-]{36}$/);
-  await page.getByLabel("Financial Account").selectOption({ label: "All Financial Accounts" });
+  const accountFilter = page.getByRole("combobox", { name: "Financial Account" });
+  await expect(accountFilter).toHaveText("Corporate Card");
+  await accountFilter.press("Enter");
+  await expect(page.getByRole("option", { name: "Corporate Card" })).toBeFocused();
+  await page.keyboard.press("Home");
+  const allAccounts = page.getByRole("option", { name: "All Financial Accounts" });
+  await expect(allAccounts).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(accountFilter).toBeFocused();
+  await expect(accountFilter).toHaveText("All Financial Accounts");
   await page.getByRole("button", { name: "Apply filter" }).click();
   await page.waitForURL((url) => url.pathname === "/workspace/reconciliations" && !url.searchParams.get("financial_account_id"));
   await expect(page.getByRole("link", { name: "View details" })).toHaveCount(1);
@@ -118,8 +127,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
 
   async function uploadReimport(fixture: string | { name: string; mimeType: string; buffer: Buffer }) {
     await page.goto(`${origin}/workspace/imports`);
-    await page.getByLabel("Source", { exact: true }).selectOption({ label: "Demo ERP" });
-    await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
+    await selectFormOption(page.getByRole("combobox", { name: "Source", exact: true }), "Demo ERP");
+    await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), "Corporate Card");
     await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
     await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(fixture);
@@ -196,15 +205,12 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page.getByRole("heading", { name: "Import preview" })).toBeVisible();
   const stagedURL = page.url();
   await page.goto(`${origin}/workspace/imports`);
-  const sourceID = await page.getByLabel("Source", { exact: true }).locator("option").filter({ hasText: "Demo ERP" }).getAttribute("value");
-  const accountID = await page.getByLabel("Financial Account").locator("option").filter({ hasText: "Corporate Card" }).getAttribute("value");
-  expect(sourceID).toBeTruthy();
-  expect(accountID).toBeTruthy();
+  const { sourceID, accountID } = await chooseDemoImport(page, "Demo ERP");
   const competing = await page.request.post(`${origin}/api/imports`, {
     headers: { Origin: origin },
     multipart: {
-      source_id: sourceID!,
-      financial_account_id: accountID!,
+      source_id: sourceID,
+      financial_account_id: accountID,
       period_start: "2026-11-16",
       period_end: "2026-11-22",
       file: { name: "earlier.csv", mimeType: "text/csv", buffer: Buffer.from(header + "ERP-WEB-RACE,,2026-11-20,20.00,BRL,Competing import\n") },

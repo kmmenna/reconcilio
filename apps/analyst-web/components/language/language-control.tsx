@@ -1,7 +1,7 @@
 import { readLanguagePreference } from "@/i18n/preference";
 
-import { LanguageSelector, type LanguagePresentation } from "./language-selector";
+import { LanguageSelector } from "./language-selector";
 
-export async function LanguageControl({ presentation = "select" }: { presentation?: LanguagePresentation }) {
-  return <LanguageSelector preference={await readLanguagePreference()} presentation={presentation} />;
+export async function LanguageControl({ side = "bottom" }: { side?: "top" | "bottom" }) {
+  return <LanguageSelector preference={await readLanguagePreference()} side={side} />;
 }
