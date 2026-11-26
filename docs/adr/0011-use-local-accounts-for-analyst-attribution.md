@@ -14,7 +14,7 @@ Set the session cookie to `SameSite=Lax` so the browser can send it on direct li
 
 ## First-time setup
 
-After starting Docker Compose, run `docker compose exec backend reconcilio bootstrap-admin` to create the initial administrator with a generated password. Write the password once to the invoking terminal and store its hash. If the administrator already exists, report that it is configured and preserve its current credential.
+After preparing a running, migrated database, run `mise run bootstrap-admin` to create the initial administrator. If the worktree's Compose backend is running, the task connects from that container with its database settings. Otherwise, the task runs the Go command on the host against the worktree's Compose PostgreSQL. Write the generated password once to the invoking terminal and store its hash. If the administrator already exists, report that it is configured and preserve its current credential.
 
 ## Future identity providers
 
