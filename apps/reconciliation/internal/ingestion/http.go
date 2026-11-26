@@ -160,7 +160,11 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *i
 	if len(issues) > 0 {
 		return nil, importProblem("invalid_import_selection", "Check the import selections.", issues...)
 	}
-	source, account, err := s.catalog.GetSelection(ctx, params.SourceID, params.FinancialAccountID)
+	source, err := s.catalog.GetSource(ctx, params.SourceID)
+	var account catalog.FinancialAccount
+	if err == nil {
+		account, err = s.catalog.GetFinancialAccount(ctx, params.FinancialAccountID)
+	}
 	switch {
 	case errors.Is(err, catalog.ErrSourceNotFound):
 		return nil, importProblem("invalid_import_selection", "Check the import selections.",
