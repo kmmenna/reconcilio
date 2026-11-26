@@ -74,12 +74,26 @@ test.describe("Browser language preference", () => {
     await expect(footer.getByRole("combobox", { name: "Language" })).toHaveValue("en");
     await expect(workspaceLanguage.locator("option")).toHaveText(["Automatic", "Português (Brasil)", "English"]);
 
+    await test.step("restore browser language from the workspace footer", async () => {
+      await workspaceLanguage.selectOption("auto");
+      await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
+      await expect(page).toHaveURL(`${origin}/workspace/transactions`);
+      await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
+      await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");
+
+      await page.reload();
+      await expect(page).toHaveURL(`${origin}/workspace/transactions`);
+      await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
+      await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");
+    });
+
     await workspaceLanguage.selectOption("pt-BR");
     await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
     await expect(footer.getByText("Reconcilio · Conciliação de transações")).toBeVisible();
     await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
     await expect(workspaceLanguage.locator("option")).toHaveText(["Automático", "Português (Brasil)", "English"]);
     await expect(page).toHaveURL(`${origin}/workspace/transactions`);
+    await expect(workspaceLanguage).toBeEnabled();
     await page.reload();
     await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
 

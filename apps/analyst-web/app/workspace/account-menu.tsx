@@ -44,8 +44,8 @@ export function AccountMenu({ displayName, username }: { displayName: string; us
       <DropdownMenu.Trigger asChild>
         <Button variant="outline" className="h-auto min-h-11 max-w-[min(16rem,100%)] px-3 py-1.5 text-start">
           <span className="min-w-0">
-            <bdi className="block wrap-anywhere whitespace-pre-wrap font-semibold">{displayName}</bdi>
-            <bdi className="block text-xs wrap-anywhere whitespace-pre-wrap text-muted-foreground">{username}</bdi>
+            <bdi className="block overflow-hidden text-ellipsis whitespace-pre font-semibold" title={displayName}>{displayName}</bdi>
+            <bdi className="block overflow-hidden text-ellipsis whitespace-pre text-xs text-muted-foreground" title={username}>{username}</bdi>
           </span>
           <ChevronDownIcon aria-hidden="true" className="size-4 text-muted-foreground" />
         </Button>
@@ -55,7 +55,7 @@ export function AccountMenu({ displayName, username }: { displayName: string; us
           align="end"
           sideOffset={6}
           collisionPadding={16}
-          className="z-50 w-48 max-w-(--radix-dropdown-menu-content-available-width) rounded-md border border-border bg-card p-1 text-foreground outline-none"
+          className="z-50 w-48 max-h-(--radix-dropdown-menu-content-available-height) max-w-(--radix-dropdown-menu-content-available-width) overflow-y-auto rounded-md border border-border bg-card p-1 text-foreground outline-none"
         >
           <DropdownMenu.Item asChild className={itemClassName}>
             <Link href="/workspace/profile">{accounts("profileTitle")}</Link>

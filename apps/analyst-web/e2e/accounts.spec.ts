@@ -12,7 +12,7 @@ async function signIn(page: Page, username: string, password: string) {
 test("creates an analyst and lets them update their own profile and sign-in credentials", async ({ page, context }) => {
   const adminPassword = process.env.RECONCILIO_SMOKE_PASSWORD;
   if (!adminPassword) throw new Error("Run the smoke task or set RECONCILIO_SMOKE_PASSWORD.");
-  const username = `Analista.${randomUUID()}`;
+  const username = `${"w".repeat(28)}${randomUUID().slice(-12)}`;
   const displayName = "Cecília de Sá";
   const initialPassword = "initial-password";
   const newPassword = "changed-password";
@@ -86,11 +86,40 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await page.getByRole("menuitem", { name: "My profile" }).click();
 
   await expect(page.getByLabel("Display name")).toHaveValue(displayName);
-  await page.getByLabel("Display name").fill("Cecília Sá Costa");
+  const longDisplayName = "W".repeat(120);
+  await page.getByLabel("Display name").fill(longDisplayName);
   await page.getByRole("button", { name: "Save display name" }).click();
   await expect(page.getByText("Display name saved.", { exact: true })).toBeVisible();
-  const updatedAccountMenu = header.getByRole("button", { name: `Cecília Sá Costa ${username}`, exact: true });
+  const updatedAccountMenu = header.getByRole("button", { name: `${longDisplayName} ${username}`, exact: true });
   await expect(updatedAccountMenu).toBeVisible();
+
+  await test.step("reach both menu actions with a long account name in a short viewport", async () => {
+    await page.getByRole("contentinfo").getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
+    await expect(page.getByRole("heading", { name: "Meu perfil", exact: true })).toBeVisible();
+
+    const menu = page.getByRole("menu");
+    const profileAction = menu.getByRole("menuitem", { name: "Meu perfil", exact: true });
+    const signOutAction = menu.getByRole("menuitem", { name: "Sair", exact: true });
+    for (const height of [240, 180]) {
+      await page.setViewportSize({ width: 320, height });
+      await updatedAccountMenu.press("Enter");
+      await expect(updatedAccountMenu).toBeInViewport({ ratio: 1 });
+      await expect(profileAction).toBeFocused();
+      await expect(profileAction).toBeInViewport({ ratio: 1 });
+      await expect(menu).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press("ArrowDown");
+      await expect(signOutAction).toBeFocused();
+      await expect(signOutAction).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press("Escape");
+      await expect(updatedAccountMenu).toBeFocused();
+      await expect(menu).toHaveCount(0);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.getByRole("contentinfo").getByRole("combobox", { name: "Idioma" }).selectOption("en");
+    await expect(page.getByRole("heading", { name: "My profile", exact: true })).toBeVisible();
+  });
 
   await page.getByLabel("Current password").fill("incorrect-password");
   await page.getByLabel("New password").fill(newPassword);
