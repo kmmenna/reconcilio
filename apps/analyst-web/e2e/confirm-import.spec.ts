@@ -70,8 +70,12 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await expect(page).toHaveURL(jobURL);
 
     if (fixture === "internal.csv") {
+      await expect(page.getByText("No automatic Reconciliations", { exact: true })).toBeVisible();
+      await expect(page.getByText("No new Match Proposals", { exact: true })).toBeVisible();
       await page.goto(`${origin}/workspace/imports`);
     } else {
+      await expect(page.getByText("1 automatic Reconciliation", { exact: true })).toBeVisible();
+      await expect(page.getByText("2 new Match Proposals", { exact: true })).toBeVisible();
       await page.getByRole("link", { name: "View Reconciliations" }).click();
     }
   }
@@ -148,6 +152,14 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
 
   await page.getByLabel("Idioma").selectOption("en");
   await expect(page.getByRole("heading", { name: "Import canceled" })).toBeVisible();
+  await expect(page.getByText("The import was canceled with these conflicts.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Track processing" })).toHaveCount(0);
+  await page.goto(`${origin}/workspace/transactions`);
+  await expect(page.getByText("ERP-003", { exact: true })).toBeVisible();
+  await expect(page.getByText("ERP-004", { exact: true })).toHaveCount(0);
+  await page.goto(detailURL);
+  await expect(page.getByText("-R$89.90", { exact: true }).first()).toBeVisible();
+
   await page.setViewportSize({ width: 1280, height: 900 });
   await uploadReimport(conflictFixture);
   await page.getByRole("button", { name: "Keep originals and import" }).click();
@@ -158,6 +170,13 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await uploadReimport(conflictFixture);
   await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
   await expect(page).toHaveURL(url => url.pathname === new URL(receiptURL).pathname);
+  await expect(page.getByRole("heading", { name: "Recorded decision" })).toBeVisible();
+  await expect(page.getByText("The original Transactions were kept.")).toBeVisible();
+
+  await page.goto(`${origin}/workspace/transactions`);
+  const imported = page.getByRole("row").filter({ hasText: "ERP-004" });
+  await expect(imported.getByText("Office parking", { exact: true })).toBeVisible();
+  await expect(imported.getByText("-R$34.50", { exact: true })).toBeVisible();
 
   await page.goto(detailURL);
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
@@ -227,6 +246,10 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   const adobe = page.getByRole("article", { name: "ADOBE* CLOUD" });
   await expect(canva.getByText("CARD-002", { exact: true })).toBeVisible();
   await expect(adobe.getByText("CARD-003", { exact: true })).toBeVisible();
+  for (const alternative of [canva, adobe]) {
+    await expect(alternative.getByText("Equal signed amount", { exact: true })).toBeVisible();
+    await expect(alternative.getByText("1 day", { exact: true })).toBeVisible();
+  }
   const adobeLink = await adobe.getByRole("link", { name: "View proposal" }).getAttribute("href");
   if (!adobeLink) throw new Error("The Adobe alternative is missing its direct proposal link.");
 
@@ -266,4 +289,11 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await staleProposal.getByRole("link", { name: "View reconciliation" }).click();
   await expect(staleProposal.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   await expect(staleProposal.getByText("CANVA* I045", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Reconcilio" }).click();
+  await page.getByRole("link", { name: "Open Transactions" }).click();
+  for (const reference of ["ERP-003", "CARD-004"]) {
+    const row = page.getByRole("row").filter({ hasText: reference });
+    await expect(row.getByText("R$1.00", { exact: true })).toBeVisible();
+  }
 });

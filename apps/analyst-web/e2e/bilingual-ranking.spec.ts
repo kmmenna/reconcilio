@@ -8,7 +8,7 @@ const provider = process.env.RECONCILIO_SMOKE_RANKING_URL;
 
 test.use({ locale: "en-US" });
 
-test("switches languages in ranked review and decision history without a provider call", async ({ page, request }) => {
+test("keeps the recorded bilingual ranking on shared links without a provider call", async ({ browser, page, request }) => {
   test.skip(!provider, "Run the smoke task with RECONCILIO_SMOKE_RANKING=true.");
   test.setTimeout(60_000);
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
@@ -106,5 +106,42 @@ test("switches languages in ranked review and decision history without a provide
   await expect(ranked).toHaveAttribute("data-ranking-evaluation-id", evaluation!);
   await expect(page).toHaveURL(reconciliationURL);
   await page.screenshot({ path: test.info().outputPath("history-pt-BR.png"), fullPage: true });
+
+  for (const reader of [
+    {
+      locale: "en-US", language: "en", username: "Username", passwordLabel: "Password", signIn: "Sign in",
+      assessment: "Recorded AI assessment", score: "Rank 1 · Score 93/100",
+      explanation: "Both descriptions point to the same Canva subscription.",
+    },
+    {
+      locale: "pt-BR", language: "pt-BR", username: "Nome de usuário", passwordLabel: "Senha", signIn: "Entrar",
+      assessment: "Avaliação da IA registrada", score: "Posição 1 · Pontuação 93/100",
+      explanation: "As descrições mencionam a mesma assinatura do Canva.",
+    },
+  ]) {
+    const readerContext = await browser.newContext({ locale: reader.locale });
+    try {
+      const sharedPage = await readerContext.newPage();
+      await sharedPage.goto(`${origin}/login`);
+      await sharedPage.getByLabel(reader.username).fill("admin");
+      await sharedPage.getByLabel(reader.passwordLabel).fill(password);
+      await sharedPage.getByRole("button", { name: reader.signIn, exact: true }).click();
+      await expect(sharedPage).toHaveURL(`${origin}/workspace`);
+
+      for (const sharedURL of [proposalURL, reconciliationURL]) {
+        await sharedPage.goto(sharedURL);
+        await expect(sharedPage).toHaveURL(sharedURL);
+        await expect(sharedPage.locator("html")).toHaveAttribute("lang", reader.language);
+        await expect(sharedPage.getByRole("heading", { name: reader.assessment })).toBeVisible();
+        const recorded = sharedPage.locator("[data-ranking-evaluation-id]");
+        await expect(recorded).toHaveAttribute("data-ranking-evaluation-id", evaluation!);
+        await expect(recorded.getByText(reader.score)).toBeVisible();
+        await expect(recorded.getByText(reader.explanation)).toBeVisible();
+      }
+    } finally {
+      await readerContext.close();
+    }
+  }
+
   expect(await providerCalls()).toBe(1);
 });
