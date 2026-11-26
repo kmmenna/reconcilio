@@ -23,3 +23,5 @@ Write PostgreSQL queries explicitly and use `sqlc` to generate typed Go methods 
 ## Schema migrations
 
 Use Tern to apply versioned application SQL migrations in a dedicated Docker Compose step before starting the API and worker. In the same step, use `rivermigrate` from the application's River dependency to apply the queue migrations. Use the application migration files as the schema input for `sqlc` so generated queries and the running database share a single application schema definition.
+
+For host development, use `mise run reconciliation:dev` to apply both sets of migrations from the current checkout before starting the API and worker. The task reaches the worktree's Compose PostgreSQL through a dynamically assigned loopback port. It shares the project's volume with the default Compose connection. An explicit `DATABASE_URL` changes the Compose backend and migration target only.
