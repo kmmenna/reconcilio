@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useId, useState, useTransition, type FormEvent } from "react";
 
+import { SourceSideLabel } from "@/components/source-side-label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,7 +62,7 @@ export function CatalogSection({ collection, entries }: { collection: Collection
                   {"code" in entry ? (
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground wrap-anywhere">{entry.code}</p>
                   ) : (
-                    <p className="mt-0.5 text-sm text-muted-foreground">{sides(entry.side)}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground"><SourceSideLabel side={entry.side}>{sides(entry.side)}</SourceSideLabel></p>
                   )}
                 </div>
                 {editor !== entry.id && (
@@ -156,8 +157,8 @@ function CatalogEditor({ collection, entry, onCancel, onSaved }: {
               key={source?.side_editable === false ? source.side : "editable"}
               name="side"
               options={[
-                { value: "internal", label: sides("internal") },
-                { value: "external", label: sides("external") },
+                { value: "internal", label: <SourceSideLabel side="internal">{sides("internal")}</SourceSideLabel> },
+                { value: "external", label: <SourceSideLabel side="external">{sides("external")}</SourceSideLabel> },
               ]}
               required
             />

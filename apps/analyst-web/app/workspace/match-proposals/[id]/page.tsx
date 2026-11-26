@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { SourceSideLabel } from "@/components/source-side-label";
 import { LocalTimestamp } from "@/components/local-timestamp";
 import { ProposalActions, ReviewDecisions } from "@/components/review/proposal-actions";
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
@@ -76,7 +77,7 @@ export default async function MatchProposalPage({ params }: { params: Promise<{ 
           <div className="mt-6 grid divide-y divide-border rounded-xl border border-border bg-card desktop:grid-cols-2 desktop:divide-x desktop:divide-y-0">
             {[proposal.internal_transaction, proposal.external_transaction].map((item) => (
               <section key={item.id} aria-labelledby={`side-${item.id}`} className="min-w-0 px-5 py-4 desktop:px-6">
-                <h2 id={`side-${item.id}`} className="text-sm font-medium text-muted-foreground">{t(item.side)}</h2>
+                <h2 id={`side-${item.id}`} className="text-sm font-medium text-muted-foreground"><SourceSideLabel side={item.side}>{t(item.side)}</SourceSideLabel></h2>
                 <p className="mt-1 text-lg font-semibold whitespace-pre-wrap wrap-anywhere">{item.description}</p>
                 <TransactionRecord item={item} />
               </section>

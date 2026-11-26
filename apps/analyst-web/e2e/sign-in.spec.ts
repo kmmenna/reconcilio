@@ -38,6 +38,10 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
   await expect(account.getByText("admin", { exact: true })).toBeVisible();
   await expect(account).toHaveCSS("border-top-width", "0px");
   await expect(account).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await account.hover();
+  await expect(account).toHaveCSS("background-color", "rgb(28, 70, 58)");
+  await page.mouse.move(0, 0);
   const main = page.getByRole("main");
   await expect(main.getByText("Administrator", { exact: true })).toHaveCount(0);
   await expect(main.getByText("admin", { exact: true })).toHaveCount(0);

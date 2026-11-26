@@ -60,6 +60,8 @@ test("keeps the recorded bilingual ranking on shared links without a provider ca
   await expect(page.getByRole("article").first()).toHaveAccessibleName("CANVA* I045");
   await expect(canva.getByText("Rank 1 · Score 93/100")).toBeVisible();
   await expect(adobe.getByText("Rank 2 · Score 24/100")).toBeVisible();
+  await expect(canva.getByText("93/100", { exact: true })).toHaveCSS("color", "rgb(23, 98, 77)");
+  await expect(adobe.getByText("24/100", { exact: true })).toHaveCSS("color", "rgb(150, 50, 40)");
   await expect(canva.getByText("Both descriptions point to the same Canva subscription.")).toBeVisible();
   await expect(adobe.getByText("The statement names a different merchant.")).toBeVisible();
   const evaluation = await ranked.first().getAttribute("data-ranking-evaluation-id");

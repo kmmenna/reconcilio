@@ -5,6 +5,7 @@ import { ProposalActions, ReviewDecisions } from "@/components/review/proposal-a
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { TransactionRecord } from "@/components/review/transaction-record";
+import { SourceSideLabel } from "@/components/source-side-label";
 import type { ReviewGroup } from "@/lib/reconciliation";
 import { readWorkflowID } from "@/lib/auth";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -26,7 +27,7 @@ export default async function ReviewGroupPage({ params }: { params: Promise<{ id
       {group ? (
         <ReviewDecisions workflow={workflow}>
           <section aria-labelledby="internal-record" className="mt-6 rounded-xl border border-border bg-accent px-5 py-4 desktop:px-6">
-            <h2 id="internal-record" className="text-sm font-medium text-muted-foreground">{t("internal")}</h2>
+            <h2 id="internal-record" className="text-sm font-medium text-muted-foreground"><SourceSideLabel side="internal">{t("internal")}</SourceSideLabel></h2>
             <p className="mt-1 text-lg font-semibold whitespace-pre-wrap wrap-anywhere">{group.internal_transaction.description}</p>
             <div className="max-w-2xl"><TransactionRecord item={group.internal_transaction} /></div>
           </section>
@@ -41,7 +42,7 @@ export default async function ReviewGroupPage({ params }: { params: Promise<{ id
                   const item = proposal.external_transaction;
                   return (
                     <article key={proposal.id} aria-labelledby={`external-${proposal.id}`} className="flex min-w-0 flex-col rounded-xl border border-border bg-card px-5 py-4">
-                      <h3 id={`external-${proposal.id}`} className="text-lg font-semibold whitespace-pre-wrap wrap-anywhere">{item.description || t("alternative")}</h3>
+                      <h3 id={`external-${proposal.id}`} className="text-lg font-semibold whitespace-pre-wrap wrap-anywhere">{item.description || <SourceSideLabel side="external">{t("alternative")}</SourceSideLabel>}</h3>
                       <TransactionRecord item={item} />
                       {proposal.ranking_assessment && <RankingAssessment assessment={proposal.ranking_assessment} heading="h4" />}
                       <div className="mt-4 border-t border-border pt-4">

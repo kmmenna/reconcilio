@@ -5,17 +5,44 @@ import { ptBR } from "@daypicker/react/locale/pt-BR";
 import { CalendarDaysIcon } from "lucide-react";
 import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { Popover } from "radix-ui";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Locale } from "@/i18n/locales";
 
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+function maskDate(value: string, locale: Locale) {
+  if (isoDatePattern.test(value.trim())) return fromISODate(value.trim(), locale);
+
+  const [first, second, ...year] = value.replace(/[^\d/]/g, "").split("/");
+  if (first.length > 2) {
+    const digits = [first, second, ...year].join("").slice(0, 8);
+    return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)].filter(Boolean).join("/");
+  }
+  if (second === undefined) return first;
+  const rest = [second.slice(2), ...year].join("").slice(0, 4);
+  const prefix = `${first}/${second.slice(0, 2)}`;
+  return rest || year.length ? `${prefix}/${rest}` : prefix;
+}
+
+function maskedCaret(raw: string, masked: string, offset: number) {
+  if (offset === raw.length || isoDatePattern.test(raw.trim())) return masked.length;
+  const prefix = raw.slice(0, offset);
+  const digits = prefix.replace(/\D/g, "").length;
+  let caret = 0;
+  let seen = 0;
+  while (caret < masked.length && seen < digits) {
+    if (/\d/.test(masked[caret])) seen += 1;
+    caret += 1;
+  }
+  return prefix.endsWith("/") && masked[caret] === "/" ? caret + 1 : caret;
+}
+
 function toISODate(value: string, locale: Locale) {
   const text = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-
   const local = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
   if (!local) return "";
   const [, first, second, year] = local;
@@ -49,7 +76,15 @@ export function ImportDateField({ field, invalid }: {
   const format = useFormatter();
   const [draft, setDraft] = useState({ value: "", locale });
   const [calendarToday, setCalendarToday] = useState<Date | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const caret = useRef<number | null>(null);
   const label = t(`fields.${field}`);
+
+  useLayoutEffect(() => {
+    if (caret.current === null) return;
+    input.current?.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  }, [draft]);
 
   // Keep the parsed date when the analyst switches languages while editing.
   const iso = toISODate(draft.value, draft.locale);
@@ -68,11 +103,18 @@ export function ImportDateField({ field, invalid }: {
               autoComplete="off"
               className="h-11 pr-12 shadow-none"
               id={field}
+              inputMode="numeric"
               placeholder={t("dateFormat")}
+              ref={input}
               type="text"
               value={value}
               required
-              onChange={(event) => setDraft({ value: event.currentTarget.value, locale })}
+              onChange={(event) => {
+                const { value: raw, selectionStart } = event.currentTarget;
+                const masked = maskDate(raw, locale);
+                caret.current = maskedCaret(raw, masked, selectionStart ?? raw.length);
+                setDraft({ value: masked, locale });
+              }}
               onBlur={() => {
                 if (iso) setDraft({ value: fromISODate(iso, locale), locale });
               }}

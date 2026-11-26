@@ -47,12 +47,11 @@ export function AccountFilter({ accounts, initialAccount }: { accounts: Financia
   return (
     <>
       <form action="/workspace/reconciliations" className="mt-7 flex flex-wrap items-end gap-3" method="get" aria-busy={pending}>
-        <div className="min-w-0 space-y-2">
+        <div className="grid w-64 max-w-full min-w-0 gap-2">
           <Label htmlFor="reconciliation-account">{t("filter")}</Label>
           <FormSelect
             id="reconciliation-account"
             name="financial_account_id"
-            className="w-64 max-w-full"
             placeholder={t("allAccounts")}
             options={[
               { value: "", label: t("allAccounts") },

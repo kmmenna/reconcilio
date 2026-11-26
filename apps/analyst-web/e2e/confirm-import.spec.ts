@@ -102,7 +102,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page.getByRole("cell", { name: "Automatic", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "View details" }).click();
 
-  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Corporate Card", level: 1 })).toBeVisible();
   const detailURL = page.url();
   expect(new URL(detailURL).pathname).toMatch(/^\/workspace\/reconciliations\/[0-9a-f-]{36}$/);
   await expect(page.getByText("Cloud hosting subscription", { exact: true })).toBeVisible();
@@ -117,7 +117,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(currentSection).toHaveText("Reconciliations");
 
   await changeWorkspaceLanguage(page, "pt-BR");
-  await expect(page.getByRole("heading", { name: "Detalhes da conciliação" })).toBeVisible();
+  await expect(page.getByText("Detalhes da conciliação", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Corporate Card", level: 1 })).toBeVisible();
   await expect(page.getByText("-R$ 89,90", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("16 de nov. de 2026", { exact: true }).first()).toBeVisible();
   await page.reload();
@@ -136,7 +137,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   }
 
   await changeWorkspaceLanguage(page, "en");
-  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Corporate Card", level: 1 })).toBeVisible();
   const conflictFixture = resolve(__dirname, "../../../examples/test-cases/reimport-amount-conflict.csv");
   await uploadReimport(conflictFixture);
   const amountComparison = page.getByRole("table", { name: /ERP-001/ });
@@ -193,7 +194,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(imported.getByText("-R$34.50", { exact: true })).toBeVisible();
 
   await page.goto(detailURL);
-  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Corporate Card", level: 1 })).toBeVisible();
   await expect(page.getByText("-R$89.90", { exact: true }).first()).toBeVisible();
 
   const header = "source_reference,payment_reference,transaction_date,amount,currency,description\n";
@@ -243,7 +244,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
 
   await page.goto(detailURL);
   await changeWorkspaceLanguage(page, "en");
-  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Corporate Card", level: 1 })).toBeVisible();
   await navigation.getByRole("link", { name: "Review queue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
   await expect(page.getByText("ERP-002", { exact: true })).toBeVisible();
@@ -258,7 +259,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(canva.getByText("CARD-002", { exact: true })).toBeVisible();
   await expect(adobe.getByText("CARD-003", { exact: true })).toBeVisible();
   for (const alternative of [canva, adobe]) {
-    await expect(alternative.getByText("Equal signed amount", { exact: true })).toBeVisible();
+    await expect(alternative.getByText("Same amount and Transaction direction", { exact: true })).toBeVisible();
+    await expect(alternative.getByText("Outflow", { exact: true })).toBeVisible();
     await expect(alternative.getByText("1 day", { exact: true })).toBeVisible();
   }
   const adobeLink = await adobe.getByRole("link", { name: "View proposal" }).getAttribute("href");
@@ -324,7 +326,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(staleProposal.getByRole("heading", { name: "Original Match Evidence" })).toBeVisible();
   await expect(staleProposal).toHaveURL(staleURL);
   await staleProposal.getByRole("link", { name: "View reconciliation" }).click();
-  await expect(staleProposal.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(staleProposal.getByRole("heading", { name: "Corporate Card", level: 1 })).toBeVisible();
   await expect(staleProposal.getByText("CANVA* I045", { exact: true })).toBeVisible();
 
   await page.reload();

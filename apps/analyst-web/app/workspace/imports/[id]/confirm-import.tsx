@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { SourceSideLabel } from "@/components/source-side-label";
 import { Button } from "@/components/ui/button";
 import type { FinancialAccount, ImportConflict, ImportProblem, ImportView, Source } from "@/lib/imports";
 import type importMessages from "@/messages/imports.en.json";
@@ -94,11 +95,11 @@ export function ConfirmImport({ id, workflow, initialConflicts, accounts }: {
             <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-sm">
               <div>
                 <dt>{t("previousSide")}</dt>
-                <dd className="font-semibold">{t(`sides.${sideChange.preview}`)}</dd>
+                <dd className="font-semibold"><SourceSideLabel side={sideChange.preview}>{t(`sides.${sideChange.preview}`)}</SourceSideLabel></dd>
               </div>
               <div>
                 <dt>{t("currentSide")}</dt>
-                <dd className="font-semibold">{t(`sides.${sideChange.current}`)}</dd>
+                <dd className="font-semibold"><SourceSideLabel side={sideChange.current}>{t(`sides.${sideChange.current}`)}</SourceSideLabel></dd>
               </div>
             </dl>
           )}

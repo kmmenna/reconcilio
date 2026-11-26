@@ -1,7 +1,9 @@
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { SourceSideLabel } from "@/components/source-side-label";
 import type { ProposalEvidence as MatchEvidence } from "@/lib/reconciliation";
 import { formatMoney } from "@/lib/transaction-format";
+import { TransactionDirection } from "./transaction-direction";
 
 export async function ProposalEvidence({ evidence, heading }: { evidence: MatchEvidence; heading: "h2" | "h4" }) {
   const [t, locale] = await Promise.all([getTranslations("Review.evidence"), getLocale()]);
@@ -18,7 +20,12 @@ export async function ProposalEvidence({ evidence, heading }: { evidence: MatchE
           <dd className="mt-0.5 font-medium">{t(`relations.${evidence.reference_relation}`)}</dd>
           {evidence.internal_reference_count !== undefined && evidence.external_reference_count !== undefined && (
             <dd className="mt-0.5 text-muted-foreground">
-              {t("referenceCounts", { internal: evidence.internal_reference_count, external: evidence.external_reference_count })}
+              {t.rich("referenceCounts", {
+                internal: evidence.internal_reference_count,
+                external: evidence.external_reference_count,
+                internalSide: (text) => <SourceSideLabel side="internal">{text}</SourceSideLabel>,
+                externalSide: (text) => <SourceSideLabel side="external">{text}</SourceSideLabel>,
+              })}
             </dd>
           )}
         </div>
@@ -28,7 +35,10 @@ export async function ProposalEvidence({ evidence, heading }: { evidence: MatchE
         </div>
         <div className="min-w-0">
           <dt className="text-muted-foreground">{t("matchedAmount")}</dt>
-          <dd className="mt-0.5 font-medium tabular-nums wrap-anywhere">{formatMoney(evidence.amount, evidence.currency, locale)}</dd>
+          <dd className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-medium tabular-nums wrap-anywhere">
+            <span>{formatMoney(evidence.amount, evidence.currency, locale)}</span>
+            <TransactionDirection amount={evidence.amount} />
+          </dd>
         </div>
       </dl>
     </>

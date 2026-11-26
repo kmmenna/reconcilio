@@ -37,12 +37,12 @@
   "ranking": {
     "title": "AI assessment",
     "recordedTitle": "Recorded AI assessment",
-    "summary": "Rank {rank, number} · Score {score, number}/100"
+    "summary": "Rank {rank, number} · Score <scoreValue>{score, number}/100</scoreValue>"
   },
   "evidence": {
     "title": "Original Match Evidence",
     "reference": "Payment Reference comparison",
-    "referenceCounts": "Internal {internal, number} · External {external, number}",
+    "referenceCounts": "<internalSide>Internal {internal, number}</internalSide> · <externalSide>External {external, number}</externalSide>",
     "relations": {
       "missing": "Missing on one or both sides",
       "different": "Different references",
@@ -50,6 +50,6 @@
     },
     "dateDifference": "Date difference",
     "daysApart": "{count, plural, =0 {Same date} one {# day} other {# days}}",
-    "matchedAmount": "Equal signed amount"
+    "matchedAmount": "Same amount and Transaction direction"
   }
 }
