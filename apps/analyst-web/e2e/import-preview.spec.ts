@@ -3,9 +3,11 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { changeWorkspaceLanguage } from "./workspace-language";
+
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
-test.use({ locale: "en-US" });
+test.use({ locale: "en-US", timezoneId: "America/Los_Angeles" });
 
 test("previews the Corporate Card CSVs and reloads the same import in both languages", async ({ page }) => {
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
@@ -22,7 +24,6 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByRole("link", { name: "Import CSV" }).click();
   await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
   const unsupportedMedia = await page.request.post(`${origin}/api/imports`, {
     headers: { Origin: origin },
@@ -35,14 +36,27 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   });
   expect(crossOrigin.status()).toBe(403);
 
+  const startDate = page.getByLabel("Start date", { exact: true });
+  const startCalendar = page.getByRole("button", { name: "Open calendar for Start date" });
+  await startDate.fill("11/15/2026");
+  await startCalendar.press("Enter");
+  const calendar = page.getByRole("dialog", { name: "Calendar for Start date" });
+  await expect(calendar.getByRole("button", { name: /Sunday, November 15, 2026$/ })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(calendar.getByRole("button", { name: /Monday, November 16, 2026$/ })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(calendar).toBeHidden();
+  await expect(startCalendar).toBeFocused();
+  await expect(startDate).toHaveValue("11/16/2026");
+
   for (const [source, fixture, text, reference, side] of [
     ["Demo ERP", "internal.csv", "Cloud hosting subscription", "ERP-001", "Internal"],
     ["Demo Card Statement", "external.csv", "CLOUDHOST* MONTHLY", "CARD-001", "External"],
   ]) {
     await page.getByLabel("Source", { exact: true }).selectOption({ label: source });
     await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-    await page.getByLabel("Start date").fill("11/16/2026");
-    await page.getByLabel("End date").fill("11/22/2026");
+    if (source !== "Demo ERP") await startDate.fill("11/16/2026");
+    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     const data = await readFile(resolve(__dirname, "../../../examples/demo", fixture));
     // Keep this preview distinct from the confirmation smoke test's exact file replay.
     await page.getByLabel("CSV file", { exact: true }).setInputFiles({
@@ -60,10 +74,10 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
 
     const previewURL = page.url();
     expect(new URL(previewURL).pathname).toMatch(/^\/workspace\/imports\/[0-9a-f-]{36}$/);
-    await page.getByLabel("Language").selectOption("pt-BR");
+    await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Prévia da importação" })).toBeVisible();
     await expect(row.getByText("-R$ 89,90", { exact: true })).toBeVisible();
-    await expect(page.getByText("16 de nov. de 2026", { exact: true }).first()).toBeVisible();
+    await expect(page.locator('time[datetime="2026-11-16"]').first()).toHaveText("16 de nov. de 2026");
     await expect(page).toHaveURL(previewURL);
 
     await page.reload();
@@ -71,14 +85,14 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
     await expect(row.getByText(text, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(previewURL);
 
-    await page.getByLabel("Idioma").selectOption("en");
+    await changeWorkspaceLanguage(page, "en");
     await page.getByRole("link", { name: "Import another CSV" }).click();
   }
 
   await page.getByLabel("Source", { exact: true }).selectOption({ label: "Demo ERP" });
   await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-  await page.getByLabel("Start date").fill("11/16/2026");
-  await page.getByLabel("End date").fill("11/22/2026");
+  await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
+  await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
   await page.getByLabel("CSV file", { exact: true }).setInputFiles({
     name: "invalid.csv",
     mimeType: "text/csv",
@@ -93,9 +107,18 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await expect(error).toContainText("too many decimal places");
   await expect(page).toHaveURL(`${origin}/workspace/imports`);
 
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(error).toContainText("Linha 2 · Valor");
   await expect(error).toContainText("casas decimais demais");
-  await expect(page.getByLabel("Data inicial")).toHaveValue("16/11/2026");
-  await expect(page.getByLabel("Data final")).toHaveValue("22/11/2026");
+  await expect(page.getByLabel("Data inicial", { exact: true })).toHaveValue("16/11/2026");
+  await expect(page.getByLabel("Data final", { exact: true })).toHaveValue("22/11/2026");
+  const endCalendar = page.getByRole("button", { name: "Abrir calendário — Data final" });
+  await page.setViewportSize({ width: 320, height: 700 });
+  await endCalendar.click();
+  const localizedCalendar = page.getByRole("dialog", { name: "Calendário — Data final" });
+  await expect(localizedCalendar.getByRole("button", { name: "Mês anterior" })).toBeVisible();
+  await localizedCalendar.getByRole("button", { name: /segunda-feira, 23 de novembro de 2026$/ }).click();
+  await expect(localizedCalendar).toBeHidden();
+  await expect(page.getByLabel("Data final", { exact: true })).toHaveValue("23/11/2026");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });

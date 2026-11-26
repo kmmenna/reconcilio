@@ -5,7 +5,6 @@ import { ProposalActions, ReviewDecisions } from "@/components/review/proposal-a
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { TransactionRecord } from "@/components/review/transaction-record";
-import { Button } from "@/components/ui/button";
 import type { ReviewGroup } from "@/lib/reconciliation";
 import { readWorkflowID } from "@/lib/auth";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -22,15 +21,8 @@ export default async function ReviewGroupPage({ params }: { params: Promise<{ id
 
   return (
     <main className="workspace">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="page-title">{t("groupTitle")}</h1>
-          {group && <p className="mt-2 text-muted-foreground wrap-anywhere">{group.financial_account.name}</p>}
-        </div>
-        <Button asChild variant="outline" className="h-11">
-          <Link href="/workspace/review">{t("backToQueue")}</Link>
-        </Button>
-      </div>
+      <h1 className="page-title">{t("groupTitle")}</h1>
+      {group && <p className="mt-2 text-muted-foreground wrap-anywhere">{group.financial_account.name}</p>}
       {group ? (
         <ReviewDecisions workflow={workflow}>
           <section aria-labelledby="internal-record" className="mt-6 rounded-xl border border-border bg-accent px-5 py-4 desktop:px-6">

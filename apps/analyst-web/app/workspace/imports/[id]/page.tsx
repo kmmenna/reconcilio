@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { LocalTimestamp } from "@/components/local-timestamp";
 import { Button } from "@/components/ui/button";
 import { readWorkflowID } from "@/lib/auth";
 import { workflowURL } from "@/lib/correlation";
 import type { ImportView } from "@/lib/imports";
-import { formatMoney, formatTimestamp, formatTransactionDate } from "@/lib/transaction-format";
+import { formatMoney, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
 import { ConfirmImport } from "./confirm-import";
@@ -41,11 +42,11 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
           {confirmed && <p className="mt-3 text-muted-foreground">{t("importedCount", { count: preview.transaction_count })}</p>}
           {canceled && <p className="mt-3 text-muted-foreground">{t("canceledSummary")}</p>}
         </div>
-        <div className="flex flex-wrap items-start gap-2">
+        {preview && (
           <Button asChild variant="outline" className="h-11">
             <Link href="/workspace/imports">{t("anotherImport")}</Link>
           </Button>
-        </div>
+        )}
       </div>
       {preview ? (
         <>
@@ -81,7 +82,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                 <div className="col-span-full">
                   <dt className="text-sm text-muted-foreground">{t(confirmed ? "confirmedAt" : "canceledAt")}</dt>
                   <dd className="mt-1 font-semibold tabular-nums">
-                    <time dateTime={settledAt}>{formatTimestamp(settledAt, locale)}</time>
+                    <LocalTimestamp value={settledAt} />
                   </dd>
                 </div>
               )}

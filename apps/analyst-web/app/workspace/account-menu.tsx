@@ -42,12 +42,12 @@ export function AccountMenu({ displayName, username }: { displayName: string; us
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
-        <Button variant="outline" className="h-auto min-h-11 max-w-[min(16rem,100%)] px-3 py-1.5 text-start">
+        <Button variant="ghost" className="h-auto min-h-11 max-w-[min(16rem,100%)] px-3 py-1.5 text-start hover:bg-panel-hover hover:text-panel-foreground focus-visible:outline-panel-muted aria-expanded:bg-panel-hover">
           <span className="min-w-0">
             <bdi className="block overflow-hidden text-ellipsis whitespace-pre font-semibold" title={displayName}>{displayName}</bdi>
-            <bdi className="block overflow-hidden text-ellipsis whitespace-pre text-xs text-muted-foreground" title={username}>{username}</bdi>
+            <bdi className="block overflow-hidden text-ellipsis whitespace-pre text-xs text-panel-muted" title={username}>{username}</bdi>
           </span>
-          <ChevronDownIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+          <ChevronDownIcon aria-hidden="true" className="size-3.5 text-panel-muted" />
         </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>

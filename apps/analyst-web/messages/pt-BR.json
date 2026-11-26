@@ -17,7 +17,8 @@
     "pending": "Entrando…"
   },
   "Workspace": {
-    "title": "Área de conciliação",
+    "menu": "Menu",
+    "navigation": "Navegação da área de conciliação",
     "footerDescription": "Conciliação de transações",
     "unavailable": "Área de conciliação indisponível",
     "sessionUnavailable": "Não foi possível verificar sua sessão. Recarregue a página para tentar novamente.",
@@ -25,7 +26,6 @@
     "signingOut": "Saindo…"
   },
   "Accounts": {
-    "workspace": "Voltar à área de conciliação",
     "profileTitle": "Meu perfil",
     "createTitle": "Criar usuário",
     "nameHeading": "Dados da conta",

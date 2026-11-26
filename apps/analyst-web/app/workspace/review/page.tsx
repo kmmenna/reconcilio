@@ -17,12 +17,7 @@ export default async function ReviewQueuePage() {
 
   return (
     <main className="workspace">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="page-title">{t("title")}</h1>
-        <Button asChild variant="outline" className="h-11">
-          <Link href="/workspace">{t("backToWorkspace")}</Link>
-        </Button>
-      </div>
+      <h1 className="page-title">{t("title")}</h1>
       {!groups ? (
         <p className="mt-6 text-destructive" role="alert">{t("unavailable")}</p>
       ) : groups.length === 0 ? (

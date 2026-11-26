@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
+import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
@@ -53,13 +54,13 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await fillAccount();
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("This username is already in use. Choose a different one.");
 
-  await page.getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("heading", { name: "Criar usuário" })).toBeVisible();
   await expect(header.getByRole("link", { name: "Criar usuário", exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Este nome de usuário já está em uso. Escolha outro.");
   await expect(page.getByLabel("Nome de usuário")).toHaveValue(username);
   await expect(page).toHaveURL(`${origin}/workspace/users/new`);
-  await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
 
   await expect(page.getByRole("heading", { name: "Create user" })).toBeVisible();
   await adminMenu.click();
@@ -67,12 +68,13 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(page).toHaveURL(`${origin}/login`);
   await page.reload();
   await signIn(page, username, initialPassword);
-  await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Create user" })).toHaveCount(0);
   await page.goto(`${origin}/workspace/users/new`);
   await expect(createUser).toHaveCount(0);
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Ask an administrator to create the account.");
-  await page.getByRole("link", { name: "Back to workspace" }).click();
+  await header.getByRole("link", { name: "Reconcilio" }).click();
+  await expect(page).toHaveURL(`${origin}/workspace/imports`);
 
   await page.setViewportSize({ width: 320, height: 720 });
   await accountMenu.click();
@@ -94,7 +96,7 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(updatedAccountMenu).toBeVisible();
 
   await test.step("reach both menu actions with a long account name in a short viewport", async () => {
-    await page.getByRole("contentinfo").getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
+    await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Meu perfil", exact: true })).toBeVisible();
 
     const menu = page.getByRole("menu");
@@ -117,7 +119,7 @@ test("creates an analyst and lets them update their own profile and sign-in cred
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.getByRole("contentinfo").getByRole("combobox", { name: "Idioma" }).selectOption("en");
+    await changeWorkspaceLanguage(page, "en");
     await expect(page.getByRole("heading", { name: "My profile", exact: true })).toBeVisible();
   });
 

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { LocalTimestamp } from "@/components/local-timestamp";
 import type { FinancialAccount } from "@/lib/imports";
 import type { Reconciliation } from "@/lib/reconciliation";
-import { formatMoney, formatTimestamp } from "@/lib/transaction-format";
+import { formatMoney } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
 import { AccountFilter } from "./account-filter";
@@ -49,7 +50,7 @@ export default async function ReconciliationsPage({ searchParams }: Props) {
                 <td className="min-w-0 font-medium wrap-anywhere desktop:max-w-72 desktop:px-4 desktop:py-3" role="cell">{result.financial_account.name}</td>
                 <td className="text-right font-semibold tabular-nums desktop:px-4 desktop:py-3 desktop:whitespace-nowrap" role="cell">{formatMoney(result.amount, result.currency, locale)}</td>
                 <td className="col-span-2 text-muted-foreground tabular-nums desktop:px-4 desktop:py-3" role="cell">
-                  <time dateTime={result.confirmed_at}>{formatTimestamp(result.confirmed_at, locale)}</time>
+                  <LocalTimestamp value={result.confirmed_at} />
                 </td>
                 <td className="col-span-2 mt-1 desktop:mt-0 desktop:px-4 desktop:py-3" role="cell">{t(`methods.${result.method}`)}</td>
                 <td className="col-span-2 desktop:px-4 desktop:text-right desktop:whitespace-nowrap" role="cell">

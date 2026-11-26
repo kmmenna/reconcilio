@@ -1,7 +1,5 @@
 {
   "title": "Fila de revisão",
-  "backToWorkspace": "Voltar ao espaço de trabalho",
-  "backToQueue": "Voltar à fila de revisão",
   "backToGroup": "Voltar às alternativas",
   "empty": "Nenhuma proposta de conciliação aguarda revisão.",
   "unavailable": "Não foi possível carregar a revisão. Atualize a página para tentar novamente.",

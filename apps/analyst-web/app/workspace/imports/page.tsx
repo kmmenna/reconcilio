@@ -30,14 +30,10 @@ export default async function ImportPage() {
   const token = await getWorkspaceToken();
   const catalog = await readCatalog(token).catch(() => undefined);
   if (catalog === null) redirect("/login");
-  const t = await getTranslations("Imports");
+  const [t, catalogLabels] = await Promise.all([getTranslations("Imports"), getTranslations("Catalog")]);
 
   return (
     <main className="workspace">
-      <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-primary underline-offset-4">
-        <Link href="/workspace" className="hover:underline">{t("workspace")}</Link>
-        <Link href="/workspace/catalog" className="hover:underline">{t("manageCatalog")}</Link>
-      </div>
       <h1 className="page-title">{t("title")}</h1>
       {catalog ? (
         catalog.sources.length > 0 && catalog.financialAccounts.length > 0 ? (
@@ -46,7 +42,17 @@ export default async function ImportPage() {
             <ImportForm sources={catalog.sources} financialAccounts={catalog.financialAccounts} />
           </>
         ) : (
-          <p className="mt-5 text-muted-foreground">{t("noCatalog")}</p>
+          <div className="mt-5">
+            <p className="text-muted-foreground">{t("noCatalog")}</p>
+            <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm font-medium text-primary underline underline-offset-4">
+              {catalog.sources.length === 0 && (
+                <li><Link href="/workspace/catalog#sources">{catalogLabels("sources")}</Link></li>
+              )}
+              {catalog.financialAccounts.length === 0 && (
+                <li><Link href="/workspace/catalog#financial-accounts">{catalogLabels("accounts")}</Link></li>
+              )}
+            </ul>
+          </div>
         )
       ) : (
         <p className="mt-5 text-destructive" role="alert">{t("problems.catalog_unavailable")}</p>

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { verifyOpenTransactions } from "./open-transactions";
+import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
@@ -17,7 +18,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByRole("link", { name: "Import CSV" }).click();
+  const navigation = page.getByRole("navigation", { name: /^(Workspace navigation|Navegação da área de conciliação)$/ });
+  const currentSection = navigation.locator('[aria-current="location"]');
 
   for (const [source, fixture, count] of [
     ["Demo ERP", "internal.csv", 3],
@@ -25,8 +27,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   ] as const) {
     await page.getByLabel("Source", { exact: true }).selectOption({ label: source });
     await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-    await page.getByLabel("Start date").fill("11/16/2026");
-    await page.getByLabel("End date").fill("11/22/2026");
+    await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
+    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(resolve(__dirname, "../../../examples/demo", fixture));
     const previewRequest = page.waitForResponse(response => response.url() === `${origin}/api/imports` && response.request().method() === "POST");
     await page.getByRole("button", { name: "Preview CSV" }).click();
@@ -57,22 +59,23 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await expect(page).toHaveURL(previewURL);
     await page.reload();
     await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
+    await expect(currentSection).toHaveText("Import CSV");
 
-    await page.getByLabel("Language").selectOption("pt-BR");
+    await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Importação confirmada" })).toBeVisible();
     await page.getByRole("link", { name: "Acompanhar processamento" }).click();
     await expect(page.getByRole("heading", { name: "Processamento da conciliação" })).toBeVisible();
     await expect(page.getByRole("status")).toHaveText("Concluído", { timeout: 15_000 });
     const jobURL = page.url();
 
-    await page.getByLabel("Idioma").selectOption("en");
+    await changeWorkspaceLanguage(page, "en");
     await expect(page.getByRole("status")).toHaveText("Completed");
     await expect(page).toHaveURL(jobURL);
 
     if (fixture === "internal.csv") {
       await expect(page.getByText("No automatic Reconciliations", { exact: true })).toBeVisible();
       await expect(page.getByText("No new Match Proposals", { exact: true })).toBeVisible();
-      await page.goto(`${origin}/workspace/imports`);
+      await navigation.getByRole("link", { name: "Import CSV", exact: true }).click();
     } else {
       await expect(page.getByText("1 automatic Reconciliation", { exact: true })).toBeVisible();
       await expect(page.getByText("2 new Match Proposals", { exact: true })).toBeVisible();
@@ -101,8 +104,10 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
 
   await verifyOpenTransactions(page);
   await page.goto(detailURL);
+  await expect(page).toHaveURL(detailURL);
+  await expect(currentSection).toHaveText("Reconciliations");
 
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("heading", { name: "Detalhes da conciliação" })).toBeVisible();
   await expect(page.getByText("-R$ 89,90", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("16 de nov. de 2026", { exact: true }).first()).toBeVisible();
@@ -115,13 +120,13 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await page.goto(`${origin}/workspace/imports`);
     await page.getByLabel("Source", { exact: true }).selectOption({ label: "Demo ERP" });
     await page.getByLabel("Financial Account").selectOption({ label: "Corporate Card" });
-    await page.getByLabel("Start date").fill("11/16/2026");
-    await page.getByLabel("End date").fill("11/22/2026");
+    await page.getByLabel("Start date", { exact: true }).fill("11/16/2026");
+    await page.getByLabel("End date", { exact: true }).fill("11/22/2026");
     await page.getByLabel("CSV file", { exact: true }).setInputFiles(fixture);
     await page.getByRole("button", { name: "Preview CSV" }).click();
   }
 
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   const conflictFixture = resolve(__dirname, "../../../examples/test-cases/reimport-amount-conflict.csv");
   await uploadReimport(conflictFixture);
@@ -135,7 +140,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   expect(crossOriginCancel.status()).toBe(403);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("heading", { name: "Conflitos de referência da fonte" })).toBeVisible();
   await expect(amountComparison.getByRole("columnheader", { name: "Transação registrada" })).toBeVisible();
   await expect(amountComparison.getByRole("cell", { name: "-R$ 89,90", exact: true })).toBeVisible();
@@ -150,7 +155,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page).toHaveURL(conflictURL);
   await expect(amountComparison.getByRole("cell", { name: "-R$ 89,90", exact: true })).toBeVisible();
 
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(page.getByRole("heading", { name: "Import canceled" })).toBeVisible();
   await expect(page.getByText("The import was canceled with these conflicts.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Track processing" })).toHaveCount(0);
@@ -226,21 +231,21 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   });
   const overlap = page.getByRole("alert").filter({ hasText: "The dates overlap an earlier import" });
   await expect(overlap).toContainText("Corporate Card covers Nov 16, 2026 through Nov 22, 2026");
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   const localizedOverlap = page.getByRole("alert").filter({ hasText: "As datas se sobrepõem" });
   await expect(localizedOverlap).toContainText("Corporate Card abrange o período de 16 de nov. de 2026 a 22 de nov. de 2026");
 
   await page.goto(detailURL);
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
-  await page.getByRole("link", { name: "Reconcilio" }).click();
-  await page.getByRole("link", { name: "Review queue" }).click();
+  await navigation.getByRole("link", { name: "Review queue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
   await expect(page.getByText("ERP-002", { exact: true })).toBeVisible();
   await expect(page.getByText("2 pending alternatives", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Compare alternatives" }).click();
 
   await expect(page.getByRole("heading", { name: "Compare Match Proposals" })).toBeVisible();
+  await expect(currentSection).toHaveText("Review queue");
   const groupURL = page.url();
   const canva = page.getByRole("article", { name: "CANVA* I045" });
   const adobe = page.getByRole("article", { name: "ADOBE* CLOUD" });
@@ -261,7 +266,9 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   const staleProposal = await context.newPage();
   await staleProposal.goto(new URL(adobeLink, origin).href);
   await expect(staleProposal.getByText("Pending", { exact: true })).toBeVisible();
-  await staleProposal.getByLabel("Language").selectOption("pt-BR");
+  await expect(staleProposal.getByRole("navigation", { name: "Workspace navigation" }).locator('[aria-current="location"]'))
+    .toHaveText("Review queue");
+  await changeWorkspaceLanguage(staleProposal, "pt-BR");
   await expect(staleProposal.getByRole("heading", { name: "Evidências originais da proposta" })).toBeVisible();
   await expect(staleProposal).toHaveURL(new URL(adobeLink, origin).href);
   const crossOriginDecision = await page.request.post(`${origin}/api${adobeLink.replace("/workspace", "")}/reject`, {
@@ -288,7 +295,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page.getByText(/^(Accepted|Aceita)$/)).toBeVisible();
   await page.goto(groupURL);
   await expect(page.getByText("Não há alternativas pendentes para esta transação.", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Voltar à fila de revisão" }).click();
+  await navigation.getByRole("link", { name: "Fila de revisão", exact: true }).click();
   await expect(page.getByText("Nenhuma proposta de conciliação aguarda revisão.", { exact: true })).toBeVisible();
 
   const [conflict, refreshed] = await Promise.all([
@@ -306,7 +313,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(staleProposal.getByText("ADOBE* CLOUD", { exact: true })).toBeVisible();
   await expect(staleProposal.getByText("-R$ 250,00", { exact: true }).first()).toBeVisible();
   await staleProposal.reload();
-  await staleProposal.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(staleProposal, "en");
   await expect(staleProposal.getByText("Invalidated", { exact: true })).toBeVisible();
   await expect(staleProposal.getByRole("heading", { name: "Original Match Evidence" })).toBeVisible();
   await expect(staleProposal).toHaveURL(staleURL);
@@ -314,8 +321,8 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(staleProposal.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   await expect(staleProposal.getByText("CANVA* I045", { exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Reconcilio" }).click();
-  await page.getByRole("link", { name: "Open Transactions" }).click();
+  await page.reload();
+  await navigation.getByRole("link", { name: "Open Transactions", exact: true }).click();
   for (const reference of ["ERP-003", "CARD-004"]) {
     const row = page.getByRole("row").filter({ hasText: reference });
     await expect(row.getByText("R$1.00", { exact: true })).toBeVisible();

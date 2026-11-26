@@ -17,7 +17,8 @@
     "pending": "Signing in…"
   },
   "Workspace": {
-    "title": "Reconciliation workspace",
+    "menu": "Menu",
+    "navigation": "Workspace navigation",
     "footerDescription": "Transaction reconciliation",
     "unavailable": "Workspace unavailable",
     "sessionUnavailable": "Your session could not be verified. Reload the page to try again.",
@@ -25,7 +26,6 @@
     "signingOut": "Signing out…"
   },
   "Accounts": {
-    "workspace": "Back to workspace",
     "profileTitle": "My profile",
     "createTitle": "Create user",
     "nameHeading": "Account details",

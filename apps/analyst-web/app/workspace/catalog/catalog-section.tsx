@@ -38,7 +38,7 @@ export function CatalogSection({ collection, entries }: { collection: Collection
   }
 
   return (
-    <section aria-labelledby={heading} aria-busy={refreshing} className="min-w-0">
+    <section id={collection} aria-labelledby={heading} aria-busy={refreshing} className="min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold" id={heading}>{t(accounts ? "accounts" : "sources")}</h2>
         {entries && editor !== "new" && (

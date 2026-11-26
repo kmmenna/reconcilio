@@ -1,8 +1,15 @@
 {
   "title": "Import CSV",
   "intro": "Select a Source, an account assignment, and the dates covered by the CSV.",
-  "workspace": "Workspace",
   "dateFormat": "MM/DD/YYYY",
+  "calendar": {
+    "open": "Open calendar for {field}",
+    "title": "Calendar for {field}",
+    "navigation": "Calendar navigation",
+    "previous": "Previous month",
+    "next": "Next month",
+    "today": "Today, {date}"
+  },
   "chooseSource": "Select a Source",
   "chooseAccount": "Select a Financial Account",
   "chooseFile": "Choose CSV",
@@ -110,7 +117,6 @@
     "missing_financial_account": "Enter a registered Financial Account code.",
     "unknown_financial_account_code": "The code {code} is not registered."
   },
-  "manageCatalog": "Manage catalog",
   "useCSVAccountCodes": "Use account codes from CSV",
   "mixedHelp": "Use a registered Financial Account code in the financial_account column on each row.",
   "multipleAccounts": "Financial Accounts",
