@@ -1,7 +1,7 @@
 "use client";
 
-import { correlatedFetch } from "@/lib/correlation";
-import { usePathname, useRouter } from "next/navigation";
+import { correlatedFetch, workflowURL } from "@/lib/correlation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createContext, type ReactNode, useContext, useRef, useState, useTransition } from "react";
 
@@ -16,14 +16,23 @@ const DecisionContext = createContext<{
   navigating: boolean;
 } | null>(null);
 
-export function ReviewDecisions({ children }: { children: ReactNode }) {
+export function ReviewDecisions({ children, workflow }: { children: ReactNode; workflow: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const active = useRef(false);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [navigating, startNavigation] = useTransition();
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const error = useProblemMessage(errorCode, "review_unavailable");
+
+  function refreshCurrentPage() {
+    if (searchParams.get("workflow") === workflow) {
+      router.refresh();
+    } else {
+      router.replace(workflowURL(pathname, workflow));
+    }
+  }
 
   async function decide(id: string, action: Decision, evaluationId?: string) {
     if (active.current || navigating) return;
@@ -39,17 +48,20 @@ export function ReviewDecisions({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ranking_evaluation_id: evaluationId }),
         }),
-      });
+      }, workflow);
       if (response.ok) {
         startNavigation(() => {
-          if (pathname !== detailPath) router.push(detailPath);
-          router.refresh();
+          if (pathname === detailPath) {
+            refreshCurrentPage();
+          } else {
+            router.push(workflowURL(detailPath, workflow));
+          }
         });
       } else if (response.status === 401) {
         router.replace("/login");
       } else if (response.status === 409) {
         setErrorCode("match_proposal_conflict");
-        startNavigation(() => router.refresh());
+        startNavigation(refreshCurrentPage);
       } else {
         setErrorCode((await readProblemCode(response)) ?? "review_unavailable");
       }

@@ -7,15 +7,17 @@ import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { TransactionRecord } from "@/components/review/transaction-record";
 import { Button } from "@/components/ui/button";
 import type { ReviewGroup } from "@/lib/reconciliation";
+import { readWorkflowID } from "@/lib/auth";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
 
 export default async function ReviewGroupPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const token = await getWorkspaceToken();
-  const [group, t] = await Promise.all([
+  const [group, t, workflow] = await Promise.all([
     readWorkspaceResource<ReviewGroup>(`/api/transactions/${encodeURIComponent(id)}/match-proposals`, token),
     getTranslations("Review"),
+    readWorkflowID(),
   ]);
 
   return (
@@ -30,7 +32,7 @@ export default async function ReviewGroupPage({ params }: { params: Promise<{ id
         </Button>
       </div>
       {group ? (
-        <ReviewDecisions>
+        <ReviewDecisions workflow={workflow}>
           <section aria-labelledby="internal-record" className="mt-6 rounded-xl border border-border bg-accent px-5 py-4 desktop:px-6">
             <h2 id="internal-record" className="text-sm font-medium text-muted-foreground">{t("internal")}</h2>
             <p className="mt-1 text-lg font-semibold whitespace-pre-wrap wrap-anywhere">{group.internal_transaction.description}</p>

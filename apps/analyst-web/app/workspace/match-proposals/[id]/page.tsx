@@ -8,16 +8,18 @@ import { TransactionRecord } from "@/components/review/transaction-record";
 import { Button } from "@/components/ui/button";
 import type { MatchProposalDetail } from "@/lib/reconciliation";
 import { formatTimestamp } from "@/lib/transaction-format";
+import { readWorkflowID } from "@/lib/auth";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
 
 export default async function MatchProposalPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const token = await getWorkspaceToken();
-  const [proposal, t, locale] = await Promise.all([
+  const [proposal, t, locale, workflow] = await Promise.all([
     readWorkspaceResource<MatchProposalDetail>(`/api/match-proposals/${encodeURIComponent(id)}`, token),
     getTranslations("Review"),
     getLocale(),
+    readWorkflowID(),
   ]);
 
   return (
@@ -34,7 +36,7 @@ export default async function MatchProposalPage({ params }: { params: Promise<{ 
         </Button>
       </div>
       {proposal ? (
-        <ReviewDecisions>
+        <ReviewDecisions workflow={workflow}>
           <section aria-labelledby="proposal-status" className="mt-6 border-y border-border py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

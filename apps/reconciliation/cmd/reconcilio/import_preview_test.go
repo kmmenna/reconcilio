@@ -580,11 +580,18 @@ func TestCSVImportPreview(t *testing.T) {
 		for _, replay := range []*httptest.ResponseRecorder{
 			confirm(exactStaged, http.StatusOK, &original),
 			request(http.MethodGet, "/api/imports/"+exactStaged.ID, session.Token, "", nil),
-			upload(session.Token, sourceID, accountID, october5, october10, referenceFree),
+			upload(session.Token, sourceID, accountID, october1, october10, referenceFree),
 		} {
 			if replay.Code != http.StatusOK || replay.Body.String() != first.Body.String() {
 				t.Fatalf("exact reference-free replay was not recognized: status=%d %s", replay.Code, replay.Body)
 			}
+		}
+		var invalid httpapi.Problem
+		readResponse(t, upload(session.Token, sourceID, accountID, october5, october10, referenceFree), http.StatusUnprocessableEntity, &invalid)
+		if invalid.Code != "invalid_csv" || !slices.Equal(invalid.Issues, []httpapi.Issue{
+			{Line: 2, Field: "transaction_date", Reason: "outside_period"},
+		}) {
+			t.Fatalf("replay must validate the submitted period: %+v", invalid)
 		}
 		var conflict struct {
 			Code    string `json:"code"`

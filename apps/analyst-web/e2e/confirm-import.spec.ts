@@ -269,23 +269,47 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   });
   expect(crossOriginDecision.status()).toBe(403);
 
-  await canva.getByRole("button", { name: "Confirm match" }).click();
+  const canvaPath = await canva.getByRole("link", { name: "View proposal" }).getAttribute("href");
+  if (!canvaPath) throw new Error("The Canva alternative is missing its direct proposal link.");
+  const [decision, detail] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === `/api${canvaPath.replace("/workspace", "")}/confirm`),
+    page.waitForResponse(response => new URL(response.url()).pathname === canvaPath),
+    canva.getByRole("button", { name: "Confirm match" }).click(),
+  ]);
+  await expect(page.getByText(/^(Accepted|Aceita)$/)).toBeVisible();
+  const reviewWorkflow = decision.headers()["x-correlation-id"];
+  expect(reviewWorkflow).toMatch(/^[0-9a-f-]{36}$/);
+  expect(detail.headers()["x-correlation-id"]).toBe(reviewWorkflow);
+  expect(detail.headers()["x-request-id"]).not.toBe(decision.headers()["x-request-id"]);
+  expect(new URL(page.url()).searchParams.get("workflow")).toBe(reviewWorkflow);
+  const reread = await page.reload();
+  expect(reread?.headers()["x-correlation-id"]).toBe(reviewWorkflow);
+  expect(reread?.headers()["x-request-id"]).not.toBe(detail.headers()["x-request-id"]);
   await expect(page.getByText(/^(Accepted|Aceita)$/)).toBeVisible();
   await page.goto(groupURL);
   await expect(page.getByText("Não há alternativas pendentes para esta transação.", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Voltar à fila de revisão" }).click();
   await expect(page.getByText("Nenhuma proposta de conciliação aguarda revisão.", { exact: true })).toBeVisible();
 
-  await staleProposal.getByRole("button", { name: "Confirmar conciliação" }).click();
+  const [conflict, refreshed] = await Promise.all([
+    staleProposal.waitForResponse(response => new URL(response.url()).pathname === `/api${adobeLink.replace("/workspace", "")}/confirm`),
+    staleProposal.waitForResponse(response => new URL(response.url()).pathname === adobeLink),
+    staleProposal.getByRole("button", { name: "Confirmar conciliação" }).click(),
+  ]);
+  expect(conflict.status()).toBe(409);
+  expect(refreshed.headers()["x-correlation-id"]).toBe(conflict.headers()["x-correlation-id"]);
+  expect(refreshed.headers()["x-request-id"]).not.toBe(conflict.headers()["x-request-id"]);
   await expect(staleProposal.getByText("Esta proposta mudou. As alternativas restantes foram atualizadas.", { exact: true })).toBeVisible();
   await expect(staleProposal.getByText("Invalidada", { exact: true })).toBeVisible();
+  const staleURL = staleProposal.url();
+  expect(new URL(staleURL).searchParams.get("workflow")).toBe(conflict.headers()["x-correlation-id"]);
   await expect(staleProposal.getByText("ADOBE* CLOUD", { exact: true })).toBeVisible();
   await expect(staleProposal.getByText("-R$ 250,00", { exact: true }).first()).toBeVisible();
   await staleProposal.reload();
   await staleProposal.getByLabel("Idioma").selectOption("en");
   await expect(staleProposal.getByText("Invalidated", { exact: true })).toBeVisible();
   await expect(staleProposal.getByRole("heading", { name: "Original Match Evidence" })).toBeVisible();
-  await expect(staleProposal).toHaveURL(new URL(adobeLink, origin).href);
+  await expect(staleProposal).toHaveURL(staleURL);
   await staleProposal.getByRole("link", { name: "View reconciliation" }).click();
   await expect(staleProposal.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   await expect(staleProposal.getByText("CANVA* I045", { exact: true })).toBeVisible();
