@@ -48,9 +48,41 @@ test.describe("Browser language preference", () => {
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Reconciliation workspace" })).toBeVisible();
 
-    await page.getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
-    await expect(page.getByRole("heading", { name: "Área de conciliação" })).toBeVisible();
-    await expect(page).toHaveURL(`${origin}/workspace`);
+    const footer = page.getByRole("contentinfo");
+    const workspaceLanguage = footer.getByRole("combobox");
+    await test.step("keep the footer reachable on short pages and narrow screens", async () => {
+      await expect.poll(() => footer.evaluate((element) => Math.round(element.getBoundingClientRect().bottom - window.innerHeight)))
+        .toBe(0);
+
+      await page.setViewportSize({ width: 320, height: 240 });
+      const main = page.getByRole("main");
+      const mainBottom = await main.evaluate((element) => element.getBoundingClientRect().bottom);
+      expect(mainBottom).toBeGreaterThan(240);
+      expect(await footer.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThanOrEqual(mainBottom);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      await main.getByRole("link").last().focus();
+      await page.keyboard.press("Tab");
+      await expect(workspaceLanguage).toBeFocused();
+      await expect(workspaceLanguage).toBeInViewport();
+      await expect(workspaceLanguage).toHaveCSS("outline-style", "solid");
+      await page.setViewportSize({ width: 1280, height: 720 });
+    });
+
+    await page.getByRole("link", { name: "Open Transactions" }).click();
+    await expect(page.getByRole("banner").getByRole("combobox")).toHaveCount(0);
+    await expect(footer.getByText("Reconcilio · Transaction reconciliation")).toBeVisible();
+    await expect(footer.getByRole("combobox", { name: "Language" })).toHaveValue("en");
+    await expect(workspaceLanguage.locator("option")).toHaveText(["Automatic", "Português (Brasil)", "English"]);
+
+    await workspaceLanguage.selectOption("pt-BR");
+    await expect(page.getByRole("heading", { name: "Transações em aberto" })).toBeVisible();
+    await expect(footer.getByText("Reconcilio · Conciliação de transações")).toBeVisible();
+    await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
+    await expect(workspaceLanguage.locator("option")).toHaveText(["Automático", "Português (Brasil)", "English"]);
+    await expect(page).toHaveURL(`${origin}/workspace/transactions`);
+    await page.reload();
+    await expect(footer.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
+
     await page.getByRole("banner").getByRole("button", { name: "Administrator admin", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Meu perfil", exact: true })).toBeVisible();
     const signOut = page.getByRole("menuitem", { name: "Sair", exact: true });
@@ -59,13 +91,13 @@ test.describe("Browser language preference", () => {
     await expect(page.getByRole("menu").getByRole("alert")).toHaveText("Não foi possível sair. Tente novamente.");
     await context.setOffline(false);
     await signOut.click();
+    await expect(page.getByRole("heading", { name: "Entrar", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
 
-    const savedPreference = page.waitForResponse(response =>
-      response.url() === `${origin}/api/preferences/language` && response.request().method() === "POST",
-    );
-    await page.getByRole("combobox", { name: "Idioma" }).selectOption("auto");
-    expect((await savedPreference).status()).toBe(204);
+    await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
+    await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    await page.getByRole("combobox", { name: "Language" }).selectOption("auto");
+    await expect(page.getByRole("heading", { name: "Entrar", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");
     await page.reload();
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");

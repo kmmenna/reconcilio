@@ -18,6 +18,7 @@
   },
   "Workspace": {
     "title": "Área de conciliação",
+    "footerDescription": "Conciliação de transações",
     "unavailable": "Área de conciliação indisponível",
     "sessionUnavailable": "Não foi possível verificar sua sessão. Recarregue a página para tentar novamente.",
     "signOut": "Sair",
