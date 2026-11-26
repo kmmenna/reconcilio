@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { ProposalActions, ReviewDecisions } from "@/components/review/proposal-actions";
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
+import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { TransactionRecord } from "@/components/review/transaction-record";
 import { Button } from "@/components/ui/button";
 import type { ReviewGroup } from "@/lib/reconciliation";
@@ -48,11 +49,12 @@ export default async function ReviewGroupPage({ params }: { params: Promise<{ id
                     <article key={proposal.id} aria-labelledby={`external-${proposal.id}`} className="flex min-w-0 flex-col rounded-xl border border-border bg-card px-5 py-4">
                       <h3 id={`external-${proposal.id}`} className="text-lg font-semibold whitespace-pre-wrap wrap-anywhere">{item.description || t("alternative")}</h3>
                       <TransactionRecord item={item} />
+                      {proposal.ranking_assessment && <RankingAssessment assessment={proposal.ranking_assessment} heading="h4" />}
                       <div className="mt-4 border-t border-border pt-4">
                         <ProposalEvidence evidence={proposal.evidence} heading="h4" />
                       </div>
                       <div className="mt-auto pt-5">
-                        <ProposalActions id={proposal.id} />
+                        <ProposalActions id={proposal.id} evaluationId={proposal.ranking_assessment?.evaluation_id} />
                         <Link className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary underline underline-offset-4 hover:text-primary-hover" href={`/workspace/match-proposals/${proposal.id}`}>
                           {t("viewProposal")}
                         </Link>

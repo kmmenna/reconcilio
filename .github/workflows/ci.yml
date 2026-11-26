@@ -19,3 +19,4 @@ jobs:
       - run: mise run test
       - run: mise run browser:install
       - run: mise run smoke
+      - run: RECONCILIO_SMOKE_RANKING=true mise run smoke

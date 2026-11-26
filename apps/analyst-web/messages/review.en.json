@@ -36,6 +36,11 @@
     "rejected": "This pair was rejected.",
     "invalidated": "A competing Reconciliation resolved one of these Transactions."
   },
+  "ranking": {
+    "title": "AI assessment",
+    "recordedTitle": "Recorded AI assessment",
+    "summary": "Rank {rank, number} · Score {score, number}/100"
+  },
   "evidence": {
     "title": "Original Match Evidence",
     "reference": "Payment Reference comparison",

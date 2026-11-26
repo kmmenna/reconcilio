@@ -36,6 +36,11 @@
     "rejected": "Este par de transações foi rejeitado.",
     "invalidated": "Uma conciliação concorrente resolveu uma destas transações."
   },
+  "ranking": {
+    "title": "Avaliação da IA",
+    "recordedTitle": "Avaliação da IA registrada",
+    "summary": "Posição {rank, number} · Pontuação {score, number}/100"
+  },
   "evidence": {
     "title": "Evidências originais da proposta",
     "reference": "Comparação das referências de pagamento",

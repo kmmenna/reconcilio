@@ -53,10 +53,10 @@ func (q *Queries) CheckReprocessingAccount(ctx context.Context, id pgtype.UUID) 
 	return id_2, err
 }
 
-const createMatchProposal = `-- name: CreateMatchProposal :exec
+const createMatchProposal = `-- name: CreateMatchProposal :one
 INSERT INTO match_proposals (financial_account_id, internal_transaction_id, external_transaction_id, evidence, job_id)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (internal_transaction_id, external_transaction_id) WHERE status = 'pending' DO NOTHING
+RETURNING id
 `
 
 type CreateMatchProposalParams struct {
@@ -67,15 +67,56 @@ type CreateMatchProposalParams struct {
 	JobID                 int64
 }
 
-func (q *Queries) CreateMatchProposal(ctx context.Context, arg CreateMatchProposalParams) error {
-	_, err := q.db.Exec(ctx, createMatchProposal,
+func (q *Queries) CreateMatchProposal(ctx context.Context, arg CreateMatchProposalParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createMatchProposal,
 		arg.FinancialAccountID,
 		arg.InternalTransactionID,
 		arg.ExternalTransactionID,
 		arg.Evidence,
 		arg.JobID,
 	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createRankingAssessment = `-- name: CreateRankingAssessment :exec
+INSERT INTO ranking_assessments (evaluation_id, proposal_id, rank, score, explanation_pt_br, explanation_en)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateRankingAssessmentParams struct {
+	EvaluationID    pgtype.UUID
+	ProposalID      pgtype.UUID
+	Rank            int32
+	Score           int32
+	ExplanationPtBr string
+	ExplanationEn   string
+}
+
+func (q *Queries) CreateRankingAssessment(ctx context.Context, arg CreateRankingAssessmentParams) error {
+	_, err := q.db.Exec(ctx, createRankingAssessment,
+		arg.EvaluationID,
+		arg.ProposalID,
+		arg.Rank,
+		arg.Score,
+		arg.ExplanationPtBr,
+		arg.ExplanationEn,
+	)
 	return err
+}
+
+const createRankingEvaluation = `-- name: CreateRankingEvaluation :one
+INSERT INTO ranking_evaluations (internal_transaction_id)
+VALUES ($1)
+RETURNING id
+`
+
+func (q *Queries) CreateRankingEvaluation(ctx context.Context, internalTransactionID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createRankingEvaluation, internalTransactionID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createReconciliation = `-- name: CreateReconciliation :one
@@ -137,7 +178,7 @@ func (q *Queries) GetJobSummary(ctx context.Context, jobID int64) (Reconciliatio
 }
 
 const getMatchProposalRecord = `-- name: GetMatchProposalRecord :one
-SELECT id, financial_account_id, internal_transaction_id, external_transaction_id, status, evidence, created_at, job_id, resolved_at, resolved_by, resolved_by_name, reconciliation_id FROM match_proposals WHERE id = $1
+SELECT id, financial_account_id, internal_transaction_id, external_transaction_id, status, evidence, created_at, job_id, resolved_at, resolved_by, resolved_by_name, reconciliation_id, ranking_evaluation_id FROM match_proposals WHERE id = $1
 `
 
 func (q *Queries) GetMatchProposalRecord(ctx context.Context, id pgtype.UUID) (MatchProposal, error) {
@@ -156,6 +197,7 @@ func (q *Queries) GetMatchProposalRecord(ctx context.Context, id pgtype.UUID) (M
 		&i.ResolvedBy,
 		&i.ResolvedByName,
 		&i.ReconciliationID,
+		&i.RankingEvaluationID,
 	)
 	return i, err
 }
@@ -230,6 +272,33 @@ func (q *Queries) GetReviewTransaction(ctx context.Context, id pgtype.UUID) (Get
 		&i.SourceName,
 	)
 	return i, err
+}
+
+const hasCoveringRankingEvaluation = `-- name: HasCoveringRankingEvaluation :one
+SELECT EXISTS (
+    SELECT 1
+    FROM ranking_evaluations AS evaluation
+    WHERE evaluation.internal_transaction_id = $1
+      AND NOT EXISTS (
+          SELECT 1 FROM unnest($2::uuid[]) AS pending(id)
+          WHERE NOT EXISTS (
+              SELECT 1 FROM ranking_assessments AS assessment
+              WHERE assessment.evaluation_id = evaluation.id AND assessment.proposal_id = pending.id
+          )
+      )
+) AS covered
+`
+
+type HasCoveringRankingEvaluationParams struct {
+	InternalID  pgtype.UUID
+	ProposalIds []pgtype.UUID
+}
+
+func (q *Queries) HasCoveringRankingEvaluation(ctx context.Context, arg HasCoveringRankingEvaluationParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasCoveringRankingEvaluation, arg.InternalID, arg.ProposalIds)
+	var covered bool
+	err := row.Scan(&covered)
+	return covered, err
 }
 
 const insertReconciliationPair = `-- name: InsertReconciliationPair :exec
@@ -348,13 +417,40 @@ func (q *Queries) ListAutomaticPairs(ctx context.Context, financialAccountID pgt
 }
 
 const listMatchProposals = `-- name: ListMatchProposals :many
-SELECT match_proposals.id, match_proposals.financial_account_id, match_proposals.internal_transaction_id, match_proposals.external_transaction_id, match_proposals.status, match_proposals.evidence, match_proposals.created_at, match_proposals.job_id, match_proposals.resolved_at, match_proposals.resolved_by, match_proposals.resolved_by_name, match_proposals.reconciliation_id, transactions.id, transactions.import_id, transactions.financial_account_id, transactions.source_id, transactions.source_side, transactions.source_reference, transactions.payment_reference, transactions.transaction_date, transactions.amount_minor, transactions.currency, transactions.minor_digits, transactions.description, sources.name AS source_name
+WITH target_group AS (
+    SELECT coalesce($2::uuid, (
+        SELECT p.internal_transaction_id FROM match_proposals AS p WHERE p.id = $1::uuid
+    )) AS internal_id
+), applicable AS (
+    SELECT evaluation.id
+    FROM ranking_evaluations AS evaluation
+    WHERE evaluation.internal_transaction_id = (SELECT target_group.internal_id FROM target_group)
+      AND NOT EXISTS (
+          SELECT 1 FROM match_proposals AS pending
+          WHERE pending.internal_transaction_id = evaluation.internal_transaction_id AND pending.status = 'pending'
+            AND NOT EXISTS (
+                SELECT 1 FROM ranking_assessments AS assessment
+                WHERE assessment.evaluation_id = evaluation.id AND assessment.proposal_id = pending.id
+            )
+      )
+    ORDER BY evaluation.created_at DESC, evaluation.id DESC
+    LIMIT 1
+)
+SELECT match_proposals.id, match_proposals.financial_account_id, match_proposals.internal_transaction_id, match_proposals.external_transaction_id, match_proposals.status, match_proposals.evidence, match_proposals.created_at, match_proposals.job_id, match_proposals.resolved_at, match_proposals.resolved_by, match_proposals.resolved_by_name, match_proposals.reconciliation_id, match_proposals.ranking_evaluation_id, transactions.id, transactions.import_id, transactions.financial_account_id, transactions.source_id, transactions.source_side, transactions.source_reference, transactions.payment_reference, transactions.transaction_date, transactions.amount_minor, transactions.currency, transactions.minor_digits, transactions.description, sources.name AS source_name,
+       assessment.evaluation_id, coalesce(assessment.rank, 0)::integer AS rank,
+       coalesce(assessment.score, 0)::integer AS score,
+       coalesce(assessment.explanation_pt_br, '')::text AS explanation_pt_br,
+       coalesce(assessment.explanation_en, '')::text AS explanation_en
 FROM match_proposals
 JOIN transactions ON transactions.id = match_proposals.external_transaction_id
 JOIN sources ON sources.id = transactions.source_id
+LEFT JOIN ranking_assessments AS assessment ON assessment.proposal_id = match_proposals.id
+    AND assessment.evaluation_id = CASE WHEN match_proposals.status = 'pending'
+        THEN (SELECT applicable.id FROM applicable) ELSE match_proposals.ranking_evaluation_id END
 WHERE match_proposals.id = $1::uuid
    OR (match_proposals.internal_transaction_id = $2::uuid AND match_proposals.status = 'pending')
-ORDER BY (match_proposals.evidence->>'reference_relation' = 'shared') DESC,
+ORDER BY assessment.rank NULLS LAST,
+         (match_proposals.evidence->>'reference_relation' = 'shared') DESC,
          (match_proposals.evidence->>'days_apart')::integer,
          match_proposals.external_transaction_id
 `
@@ -365,9 +461,14 @@ type ListMatchProposalsParams struct {
 }
 
 type ListMatchProposalsRow struct {
-	MatchProposal MatchProposal
-	Transaction   Transaction
-	SourceName    string
+	MatchProposal   MatchProposal
+	Transaction     Transaction
+	SourceName      string
+	EvaluationID    pgtype.UUID
+	Rank            int32
+	Score           int32
+	ExplanationPtBr string
+	ExplanationEn   string
 }
 
 func (q *Queries) ListMatchProposals(ctx context.Context, arg ListMatchProposalsParams) ([]ListMatchProposalsRow, error) {
@@ -392,6 +493,7 @@ func (q *Queries) ListMatchProposals(ctx context.Context, arg ListMatchProposals
 			&i.MatchProposal.ResolvedBy,
 			&i.MatchProposal.ResolvedByName,
 			&i.MatchProposal.ReconciliationID,
+			&i.MatchProposal.RankingEvaluationID,
 			&i.Transaction.ID,
 			&i.Transaction.ImportID,
 			&i.Transaction.FinancialAccountID,
@@ -405,6 +507,11 @@ func (q *Queries) ListMatchProposals(ctx context.Context, arg ListMatchProposals
 			&i.Transaction.MinorDigits,
 			&i.Transaction.Description,
 			&i.SourceName,
+			&i.EvaluationID,
+			&i.Rank,
+			&i.Score,
+			&i.ExplanationPtBr,
+			&i.ExplanationEn,
 		); err != nil {
 			return nil, err
 		}
@@ -628,7 +735,9 @@ SELECT internal.id AS internal_id, external.id AS external_id,
        abs(internal.transaction_date - external.transaction_date)::integer AS days_apart,
        coalesce(reference_counts.internal_count, 0)::bigint AS internal_reference_count,
        coalesce(reference_counts.external_count, 0)::bigint AS external_reference_count,
-       internal.amount_minor, internal.currency, internal.minor_digits
+       internal.amount_minor, internal.currency, internal.minor_digits,
+       internal.description AS internal_description, external.description AS external_description,
+       pending.id AS proposal_id
 FROM transactions AS internal
 JOIN transactions AS external ON external.financial_account_id = internal.financial_account_id
     AND external.source_side = 'external'
@@ -637,6 +746,8 @@ JOIN transactions AS external ON external.financial_account_id = internal.financ
     AND external.transaction_date BETWEEN internal.transaction_date - 3 AND internal.transaction_date + 3
 LEFT JOIN reference_counts ON reference_counts.payment_reference = internal.payment_reference
     AND reference_counts.payment_reference = external.payment_reference
+LEFT JOIN match_proposals AS pending ON pending.internal_transaction_id = internal.id
+    AND pending.external_transaction_id = external.id AND pending.status = 'pending'
 WHERE internal.financial_account_id = $1
   AND internal.source_side = 'internal'
   AND ($2::uuid IS NULL OR internal.id = $2)
@@ -650,6 +761,7 @@ WHERE internal.financial_account_id = $1
       SELECT 1 FROM match_proposals
       WHERE internal_transaction_id = internal.id AND external_transaction_id = external.id AND status = 'rejected'
   )
+ORDER BY internal.id, external.id
 `
 
 type ListReviewCandidatesParams struct {
@@ -668,6 +780,9 @@ type ListReviewCandidatesRow struct {
 	AmountMinor            int64
 	Currency               string
 	MinorDigits            int32
+	InternalDescription    string
+	ExternalDescription    string
+	ProposalID             pgtype.UUID
 }
 
 func (q *Queries) ListReviewCandidates(ctx context.Context, arg ListReviewCandidatesParams) ([]ListReviewCandidatesRow, error) {
@@ -689,6 +804,9 @@ func (q *Queries) ListReviewCandidates(ctx context.Context, arg ListReviewCandid
 			&i.AmountMinor,
 			&i.Currency,
 			&i.MinorDigits,
+			&i.InternalDescription,
+			&i.ExternalDescription,
+			&i.ProposalID,
 		); err != nil {
 			return nil, err
 		}
@@ -759,6 +877,24 @@ func (q *Queries) ListReviewQueue(ctx context.Context) ([]ListReviewQueueRow, er
 	return items, nil
 }
 
+const rankingCoversProposal = `-- name: RankingCoversProposal :one
+SELECT EXISTS (
+    SELECT 1 FROM ranking_assessments WHERE evaluation_id = $1 AND proposal_id = $2
+) AS covered
+`
+
+type RankingCoversProposalParams struct {
+	EvaluationID pgtype.UUID
+	ProposalID   pgtype.UUID
+}
+
+func (q *Queries) RankingCoversProposal(ctx context.Context, arg RankingCoversProposalParams) (bool, error) {
+	row := q.db.QueryRow(ctx, rankingCoversProposal, arg.EvaluationID, arg.ProposalID)
+	var covered bool
+	err := row.Scan(&covered)
+	return covered, err
+}
+
 const releaseAccountLease = `-- name: ReleaseAccountLease :exec
 DELETE FROM reconciliation_account_leases
 WHERE financial_account_id = $1 AND attempt_token = $2
@@ -807,22 +943,59 @@ func (q *Queries) RenewAccountLease(ctx context.Context, arg RenewAccountLeasePa
 	return owned, err
 }
 
+const reserveDailyRankingUsage = `-- name: ReserveDailyRankingUsage :execrows
+INSERT INTO ranking_daily_usage (usage_day, call_count)
+SELECT (clock_timestamp() AT TIME ZONE 'UTC')::date, 1 WHERE $1::integer > 0
+ON CONFLICT (usage_day) DO UPDATE SET call_count = ranking_daily_usage.call_count + 1
+WHERE ranking_daily_usage.call_count < $1
+`
+
+func (q *Queries) ReserveDailyRankingUsage(ctx context.Context, dailyLimit int32) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveDailyRankingUsage, dailyLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reserveJobRankingUsage = `-- name: ReserveJobRankingUsage :execrows
+INSERT INTO ranking_job_usage (job_id, call_count)
+SELECT $1::bigint, 1 WHERE $2::integer > 0
+ON CONFLICT (job_id) DO UPDATE SET call_count = ranking_job_usage.call_count + 1
+WHERE ranking_job_usage.call_count < $2
+`
+
+type ReserveJobRankingUsageParams struct {
+	JobID    int64
+	JobLimit int32
+}
+
+func (q *Queries) ReserveJobRankingUsage(ctx context.Context, arg ReserveJobRankingUsageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveJobRankingUsage, arg.JobID, arg.JobLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const resolveMatchProposal = `-- name: ResolveMatchProposal :one
 UPDATE match_proposals
 SET status = $1,
     resolved_at = coalesce((SELECT r.confirmed_at FROM reconciliations AS r WHERE r.id = $2), statement_timestamp()),
     resolved_by = $3,
     resolved_by_name = (SELECT u.display_name FROM users AS u WHERE u.id = $3),
-    reconciliation_id = $2
-WHERE match_proposals.id = $4 AND match_proposals.status = 'pending'
-RETURNING id, financial_account_id, internal_transaction_id, external_transaction_id, status, evidence, created_at, job_id, resolved_at, resolved_by, resolved_by_name, reconciliation_id
+    reconciliation_id = $2,
+    ranking_evaluation_id = $4
+WHERE match_proposals.id = $5 AND match_proposals.status = 'pending'
+RETURNING id, financial_account_id, internal_transaction_id, external_transaction_id, status, evidence, created_at, job_id, resolved_at, resolved_by, resolved_by_name, reconciliation_id, ranking_evaluation_id
 `
 
 type ResolveMatchProposalParams struct {
-	Status           string
-	ReconciliationID pgtype.UUID
-	AnalystID        pgtype.UUID
-	ID               pgtype.UUID
+	Status              string
+	ReconciliationID    pgtype.UUID
+	AnalystID           pgtype.UUID
+	RankingEvaluationID pgtype.UUID
+	ID                  pgtype.UUID
 }
 
 func (q *Queries) ResolveMatchProposal(ctx context.Context, arg ResolveMatchProposalParams) (MatchProposal, error) {
@@ -830,6 +1003,7 @@ func (q *Queries) ResolveMatchProposal(ctx context.Context, arg ResolveMatchProp
 		arg.Status,
 		arg.ReconciliationID,
 		arg.AnalystID,
+		arg.RankingEvaluationID,
 		arg.ID,
 	)
 	var i MatchProposal
@@ -846,6 +1020,7 @@ func (q *Queries) ResolveMatchProposal(ctx context.Context, arg ResolveMatchProp
 		&i.ResolvedBy,
 		&i.ResolvedByName,
 		&i.ReconciliationID,
+		&i.RankingEvaluationID,
 	)
 	return i, err
 }

@@ -35,7 +35,8 @@ type ReviewQueueEntry struct {
 
 type ReviewGroup struct {
 	ReviewTransaction
-	Proposals []Proposal `json:"proposals"`
+	Proposals           []Proposal `json:"proposals"`
+	RankingEvaluationID string     `json:"ranking_evaluation_id,omitempty" format:"uuid"`
 }
 
 type ProposalResolution struct {
@@ -48,9 +49,10 @@ type ProposalResolution struct {
 type Proposal struct {
 	ID string `json:"id" format:"uuid"`
 	ProposalResolution
-	External  Transaction      `json:"external_transaction"`
-	Evidence  ProposalEvidence `json:"evidence"`
-	CreatedAt time.Time        `json:"created_at"`
+	External          Transaction        `json:"external_transaction"`
+	Evidence          ProposalEvidence   `json:"evidence"`
+	CreatedAt         time.Time          `json:"created_at"`
+	RankingAssessment *RankingAssessment `json:"ranking_assessment,omitempty"`
 }
 
 type ProposalDetail struct {
@@ -58,33 +60,81 @@ type ProposalDetail struct {
 	Proposal
 }
 
-// publishMatchProposals evaluates and publishes pairs in the account write transaction.
-func publishMatchProposals(ctx context.Context, queries *reconciliationdb.Queries, accountID pgtype.UUID, jobID int64) error {
-	pairs, err := queries.ListReviewCandidates(ctx, reconciliationdb.ListReviewCandidatesParams{AccountID: accountID})
+// Publish only currently eligible pairs and attach a ranking if it still covers the group.
+func publishMatchProposals(ctx context.Context, queries *reconciliationdb.Queries, attempt *AccountAttempt, evaluations map[pgtype.UUID]rankedAlternatives) (int, error) {
+	pairs, err := queries.ListReviewCandidates(ctx, reconciliationdb.ListReviewCandidatesParams{AccountID: attempt.accountID})
 	if err != nil {
-		return fmt.Errorf("find candidates for proposal publication: %w", err)
+		return 0, fmt.Errorf("find candidates for proposal publication: %w", err)
 	}
-	for _, pair := range pairs {
-		evidence := ProposalEvidence{
-			ReferenceRelation: pair.ReferenceRelation, DaysApart: pair.DaysApart,
-			InternalReferenceCount: pair.InternalReferenceCount, ExternalReferenceCount: pair.ExternalReferenceCount,
-			Amount: money.Decimal(pair.AmountMinor, int(pair.MinorDigits)), Currency: pair.Currency,
+	discardedEvaluations := 0
+	for group := range reviewGroups(pairs) {
+		for i, pair := range group {
+			if pair.ProposalID.Valid {
+				continue
+			}
+			id, err := publishMatchProposal(ctx, queries, attempt.accountID, attempt.jobID, pair)
+			if err != nil {
+				return 0, err
+			}
+			group[i].ProposalID = id
 		}
-		if !evidence.valid() {
-			return errors.New("invalid proposed match evidence")
+		if evaluation := evaluations[group[0].InternalID]; evaluation != nil {
+			saved, err := saveRankingEvaluation(ctx, queries, group, evaluation)
+			if err != nil {
+				return 0, err
+			}
+			if !saved {
+				discardedEvaluations++
+			}
 		}
-		data, err := json.Marshal(evidence)
-		if err != nil {
-			return fmt.Errorf("encode proposed match evidence: %w", err)
+	}
+	return discardedEvaluations, nil
+}
+
+func publishMatchProposal(ctx context.Context, queries *reconciliationdb.Queries, accountID pgtype.UUID, jobID int64, pair reconciliationdb.ListReviewCandidatesRow) (pgtype.UUID, error) {
+	evidence := ProposalEvidence{
+		ReferenceRelation: pair.ReferenceRelation, DaysApart: pair.DaysApart,
+		InternalReferenceCount: pair.InternalReferenceCount, ExternalReferenceCount: pair.ExternalReferenceCount,
+		Amount: money.Decimal(pair.AmountMinor, int(pair.MinorDigits)), Currency: pair.Currency,
+	}
+	if !evidence.valid() {
+		return pgtype.UUID{}, errors.New("invalid proposed match evidence")
+	}
+	data, err := json.Marshal(evidence)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("encode proposed match evidence: %w", err)
+	}
+	id, err := queries.CreateMatchProposal(ctx, reconciliationdb.CreateMatchProposalParams{
+		FinancialAccountID: accountID, InternalTransactionID: pair.InternalID, ExternalTransactionID: pair.ExternalID,
+		Evidence: data, JobID: jobID,
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("record match proposal: %w", err)
+	}
+	return id, nil
+}
+
+func saveRankingEvaluation(ctx context.Context, queries *reconciliationdb.Queries, group []reconciliationdb.ListReviewCandidatesRow, evaluation rankedAlternatives) (bool, error) {
+	for _, pair := range group {
+		item, ok := evaluation[pair.ExternalID]
+		if !ok || (item.ProposalID.Valid && item.ProposalID != pair.ProposalID) {
+			return false, nil
 		}
-		if err := queries.CreateMatchProposal(ctx, reconciliationdb.CreateMatchProposalParams{
-			FinancialAccountID: accountID, InternalTransactionID: pair.InternalID, ExternalTransactionID: pair.ExternalID,
-			Evidence: data, JobID: jobID,
+	}
+	id, err := queries.CreateRankingEvaluation(ctx, group[0].InternalID)
+	if err != nil {
+		return false, fmt.Errorf("record ranking evaluation: %w", err)
+	}
+	for _, pair := range group {
+		item := evaluation[pair.ExternalID]
+		if err := queries.CreateRankingAssessment(ctx, reconciliationdb.CreateRankingAssessmentParams{
+			EvaluationID: id, ProposalID: pair.ProposalID, Rank: item.Rank, Score: item.Score,
+			ExplanationPtBr: item.Explanations.Portuguese, ExplanationEn: item.Explanations.English,
 		}); err != nil {
-			return fmt.Errorf("record match proposal: %w", err)
+			return false, fmt.Errorf("record ranking assessment: %w", err)
 		}
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Service) ListReviewQueue(ctx context.Context) ([]ReviewQueueEntry, error) {
@@ -119,6 +169,9 @@ func (s *Service) GetReviewGroup(ctx context.Context, internalID pgtype.UUID) (R
 		proposal, err := presentMatchProposal(internal.Transaction, row)
 		if err != nil {
 			return ReviewGroup{}, err
+		}
+		if proposal.RankingAssessment != nil {
+			group.RankingEvaluationID = proposal.RankingAssessment.EvaluationID
 		}
 		group.Proposals = append(group.Proposals, proposal)
 	}
@@ -158,7 +211,13 @@ func presentMatchProposal(internal reconciliationdb.Transaction, row reconciliat
 	if err != nil {
 		return Proposal{}, err
 	}
+	var ranking *RankingAssessment
+	if row.EvaluationID.Valid {
+		ranking = &RankingAssessment{EvaluationID: row.EvaluationID.String(), Rank: row.Rank, Score: row.Score,
+			Explanations: RankingExplanations{Portuguese: row.ExplanationPtBr, English: row.ExplanationEn}}
+	}
 	return Proposal{
+		RankingAssessment:  ranking,
 		ID:                 record.ID.String(),
 		ProposalResolution: presentProposalResolution(record),
 		External:           presentTransaction(row.Transaction, row.SourceName),

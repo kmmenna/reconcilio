@@ -18,10 +18,15 @@ import (
 type Service struct {
 	pool    *pgxpool.Pool
 	queries *reconciliationdb.Queries
+	ranking RankingOptions
 }
 
 func New(pool *pgxpool.Pool) *Service {
-	return &Service{pool: pool, queries: reconciliationdb.New(pool)}
+	return NewWithRanking(pool, DefaultRankingOptions())
+}
+
+func NewWithRanking(pool *pgxpool.Pool, ranking RankingOptions) *Service {
+	return &Service{pool: pool, queries: reconciliationdb.New(pool), ranking: ranking}
 }
 
 type MatchEvidence struct {
@@ -37,9 +42,24 @@ func (s *Service) ProcessAccount(ctx context.Context, attempt *AccountAttempt) e
 	if err := s.confirmAutomaticMatches(ctx, attempt); err != nil {
 		return err
 	}
-	return attempt.write(ctx, func(tx pgx.Tx) error {
-		return publishMatchProposals(ctx, s.queries.WithTx(tx), attempt.accountID, attempt.jobID)
+	evaluations, err := s.rankReviewGroups(ctx, attempt)
+	if err != nil {
+		return err
+	}
+	var discardedEvaluations int
+	err = attempt.write(ctx, func(tx pgx.Tx) error {
+		var err error
+		discardedEvaluations, err = publishMatchProposals(ctx, s.queries.WithTx(tx), attempt, evaluations)
+		return err
 	})
+	if err == nil && s.ranking.Observe != nil {
+		for range discardedEvaluations {
+			s.ranking.Observe(ctx, RankingEvent{
+				Provider: s.ranking.Provider, Model: s.ranking.Model, FallbackReason: "group_changed",
+			})
+		}
+	}
+	return err
 }
 
 func (s *Service) confirmAutomaticMatches(ctx context.Context, attempt *AccountAttempt) error {
@@ -104,11 +124,12 @@ type DecisionActor struct {
 
 type Detail struct {
 	Summary
-	Actor            DecisionActor     `json:"actor"`
-	Members          []Transaction     `json:"members"`
-	Evidence         *MatchEvidence    `json:"evidence,omitempty"`
-	MatchProposalID  string            `json:"match_proposal_id,omitempty" format:"uuid"`
-	ProposalEvidence *ProposalEvidence `json:"proposal_evidence,omitempty"`
+	Actor             DecisionActor      `json:"actor"`
+	Members           []Transaction      `json:"members"`
+	Evidence          *MatchEvidence     `json:"evidence,omitempty"`
+	MatchProposalID   string             `json:"match_proposal_id,omitempty" format:"uuid"`
+	ProposalEvidence  *ProposalEvidence  `json:"proposal_evidence,omitempty"`
+	RankingAssessment *RankingAssessment `json:"ranking_assessment,omitempty"`
 }
 
 func (s *Service) List(ctx context.Context, accountID pgtype.UUID) ([]Summary, error) {
@@ -171,6 +192,7 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (Detail, error) {
 		}
 		detail.MatchProposalID = proposal.ID
 		detail.ProposalEvidence = &proposal.Evidence
+		detail.RankingAssessment = proposal.RankingAssessment
 		detail.Actor = *proposal.Actor
 	}
 	return detail, nil

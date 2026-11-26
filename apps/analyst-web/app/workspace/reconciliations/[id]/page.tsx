@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
+import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { Button } from "@/components/ui/button";
 import type { ReconciliationDetail } from "@/lib/reconciliation";
 import { formatMoney, formatTimestamp, formatTransactionDate } from "@/lib/transaction-format";
@@ -82,6 +83,7 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
           {result.proposal_evidence && result.match_proposal_id && (
             <section className="mt-8 max-w-2xl">
               <ProposalEvidence evidence={result.proposal_evidence} heading="h2" />
+              {result.ranking_assessment && <RankingAssessment assessment={result.ranking_assessment} heading="h2" recorded />}
               <Link className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-primary underline underline-offset-4 hover:text-primary-hover" href={`/workspace/match-proposals/${result.match_proposal_id}`}>
                 {matches("viewProposal")}
               </Link>

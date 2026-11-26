@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -39,10 +40,23 @@ func (s *Service) decideMatchProposal(ctx context.Context, id, analystID pgtype.
 		default:
 			return errProposalConflict
 		}
-		if rankingEvaluationID != "" {
-			return errInvalidEvaluation
-		}
 		params := reconciliationdb.ResolveMatchProposalParams{ID: id, AnalystID: analystID, Status: decision}
+		if rankingEvaluationID != "" {
+			evaluationID, err := uuid.Parse(rankingEvaluationID)
+			if err != nil {
+				return errInvalidEvaluation
+			}
+			params.RankingEvaluationID = pgtype.UUID{Bytes: evaluationID, Valid: true}
+			covered, err := queries.RankingCoversProposal(ctx, reconciliationdb.RankingCoversProposalParams{
+				EvaluationID: params.RankingEvaluationID, ProposalID: id,
+			})
+			if err != nil {
+				return fmt.Errorf("check ranking covers proposal: %w", err)
+			}
+			if !covered {
+				return errInvalidEvaluation
+			}
+		}
 		if decision == "accepted" {
 			pairs, err := queries.ListReviewCandidates(ctx, reconciliationdb.ListReviewCandidatesParams{
 				AccountID: proposal.FinancialAccountID, InternalID: proposal.InternalTransactionID, ExternalID: proposal.ExternalTransactionID,

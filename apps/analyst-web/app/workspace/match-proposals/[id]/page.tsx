@@ -3,6 +3,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 
 import { ProposalActions, ReviewDecisions } from "@/components/review/proposal-actions";
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
+import { RankingAssessment } from "@/components/review/ranking-assessment";
 import { TransactionRecord } from "@/components/review/transaction-record";
 import { Button } from "@/components/ui/button";
 import type { MatchProposalDetail } from "@/lib/reconciliation";
@@ -45,7 +46,7 @@ export default async function MatchProposalPage({ params }: { params: Promise<{ 
                   <Link href={`/workspace/reconciliations/${proposal.reconciliation_id}`}>{t("viewReconciliation")}</Link>
                 </Button>
               )}
-              {proposal.status === "pending" && <ProposalActions id={proposal.id} />}
+              {proposal.status === "pending" && <ProposalActions id={proposal.id} evaluationId={proposal.ranking_assessment?.evaluation_id} />}
             </div>
             <dl className="mt-4 flex flex-wrap gap-x-7 gap-y-3 text-sm">
               <div>
@@ -82,6 +83,9 @@ export default async function MatchProposalPage({ params }: { params: Promise<{ 
           </div>
           <section className="mt-7 max-w-xl">
             <ProposalEvidence evidence={proposal.evidence} heading="h2" />
+            {proposal.ranking_assessment && (
+              <RankingAssessment assessment={proposal.ranking_assessment} heading="h2" recorded={proposal.status !== "pending"} />
+            )}
           </section>
         </ReviewDecisions>
       ) : (

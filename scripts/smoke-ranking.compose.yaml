@@ -1,0 +1,19 @@
+services:
+  backend:
+    environment:
+      OPENAI_API_KEY: smoke-test
+      OPENAI_MODEL: smoke-ranking
+      OPENAI_RESPONSES_URL: http://ranking-provider:4010/v1/responses
+
+  ranking-provider:
+    image: node:22.20.0-alpine
+    command: ["node", "/provider.mjs"]
+    volumes:
+      - ./scripts/smoke-ranking-provider.mjs:/provider.mjs:ro,Z
+    ports:
+      - "127.0.0.1::4010"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4010/requests').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 4s
+      retries: 15
