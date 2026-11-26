@@ -229,3 +229,49 @@ INSERT INTO reconciliation_job_summaries (
     (SELECT count(*) FROM match_proposals WHERE job_id = sqlc.arg(job_id))
 )
 ON CONFLICT (job_id) DO NOTHING;
+
+-- name: ListOpenTransactions :many
+WITH unique_references AS (
+    SELECT financial_account_id, payment_reference
+    FROM transactions
+    WHERE payment_reference IS NOT NULL
+    GROUP BY financial_account_id, payment_reference
+    HAVING count(*) FILTER (WHERE source_side = 'internal') = 1
+       AND count(*) FILTER (WHERE source_side = 'external') = 1
+),
+discrepant_pairs AS (
+    SELECT internal.id AS internal_id, external.id AS external_id,
+           -- Scale as numeric before subtraction to preserve precision beyond bigint.
+           abs(internal.amount_minor * ('1e-' || internal.minor_digits)::numeric
+             - external.amount_minor * ('1e-' || external.minor_digits)::numeric) AS amount
+    FROM unique_references AS refs
+    JOIN transactions AS internal USING (financial_account_id, payment_reference)
+    JOIN transactions AS external USING (financial_account_id, payment_reference)
+    WHERE internal.source_side = 'internal' AND external.source_side = 'external'
+      AND internal.currency = external.currency
+      AND NOT EXISTS (
+          SELECT 1 FROM reconciliation_members
+          WHERE transaction_id IN (internal.id, external.id) AND released_at IS NULL
+      )
+),
+discrepancies AS (
+    SELECT internal_id AS transaction_id, amount FROM discrepant_pairs WHERE amount <> 0
+    UNION ALL
+    SELECT external_id AS transaction_id, amount FROM discrepant_pairs WHERE amount <> 0
+)
+SELECT sqlc.embed(transactions), sqlc.embed(financial_accounts), sources.name AS source_name,
+       coalesce(discrepancies.amount::text, '')::text AS discrepancy_amount,
+       EXISTS (
+           SELECT 1 FROM match_proposals
+           WHERE status = 'pending'
+             AND (internal_transaction_id = transactions.id OR external_transaction_id = transactions.id)
+       ) AS has_pending_match_proposals
+FROM transactions
+JOIN financial_accounts ON financial_accounts.id = transactions.financial_account_id
+JOIN sources ON sources.id = transactions.source_id
+LEFT JOIN discrepancies ON discrepancies.transaction_id = transactions.id
+WHERE NOT EXISTS (
+    SELECT 1 FROM reconciliation_members
+    WHERE transaction_id = transactions.id AND released_at IS NULL
+)
+ORDER BY transactions.transaction_date DESC, transactions.id;

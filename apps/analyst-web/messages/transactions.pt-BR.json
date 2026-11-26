@@ -1,0 +1,15 @@
+{
+  "title": "Transações em aberto",
+  "transaction": "Transação",
+  "status": "Situação da revisão",
+  "pendingProposals": "Propostas pendentes",
+  "noPendingProposals": "Sem propostas pendentes",
+  "amountDifference": "Diferença de valor",
+  "sharedReference": "Referência de pagamento em comum",
+  "empty": "Não há transações em aberto.",
+  "unavailable": "Não foi possível carregar as transações em aberto. Atualize a página para tentar novamente.",
+  "sides": {
+    "internal": "Interna",
+    "external": "Externa"
+  }
+}

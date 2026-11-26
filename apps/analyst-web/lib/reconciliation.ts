@@ -46,6 +46,12 @@ export type Transaction = {
   description: string;
 };
 
+export type OpenTransaction = Transaction & {
+  financial_account: FinancialAccount;
+  has_pending_match_proposals: boolean;
+  amount_discrepancy?: { payment_reference: string; amount: string; currency: string };
+};
+
 export type DecisionActor = { kind: "engine" } | { kind: "analyst"; user_id: string; display_name: string };
 
 export type ProposalEvidence = {
