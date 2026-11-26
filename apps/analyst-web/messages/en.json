@@ -18,6 +18,7 @@
   },
   "Workspace": {
     "title": "Reconciliation workspace",
+    "footerDescription": "Transaction reconciliation",
     "unavailable": "Workspace unavailable",
     "sessionUnavailable": "Your session could not be verified. Reload the page to try again.",
     "signedInAs": "Signed in as",
