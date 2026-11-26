@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch, workflowURL } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -14,8 +15,9 @@ import { ImportConflicts } from "./import-conflicts";
 type ProblemCode = keyof typeof importMessages.problems;
 type Action = "confirm" | "cancel" | "refresh-preview";
 
-export function ConfirmImport({ id, initialConflicts, accounts }: {
+export function ConfirmImport({ id, workflow, initialConflicts, accounts }: {
   id: string;
+  workflow: string;
   initialConflicts: ImportConflict[];
   accounts: FinancialAccount[];
 }) {
@@ -44,7 +46,7 @@ export function ConfirmImport({ id, initialConflicts, accounts }: {
       "refresh-preview": "refresh_unavailable",
     }[action];
     try {
-      const response = await fetch(
+      const response = await correlatedFetch(
         `/api/imports/${encodeURIComponent(id)}/${action}`,
         action === "confirm"
           ? {
@@ -53,6 +55,7 @@ export function ConfirmImport({ id, initialConflicts, accounts }: {
               body: JSON.stringify({ keep_original_conflict_ids: conflicts.map(({ id }) => id) }),
             }
           : { method: "POST" },
+        workflow,
       );
       if (response.status === 401) {
         router.replace("/login");
@@ -69,7 +72,7 @@ export function ConfirmImport({ id, initialConflicts, accounts }: {
       }
       if (action === "refresh-preview") {
         const preview = await response.json() as ImportView;
-        startRefresh(() => router.push(`/workspace/imports/${encodeURIComponent(preview.id)}`));
+        startRefresh(() => router.push(workflowURL(`/workspace/imports/${encodeURIComponent(preview.id)}`, workflow)));
       } else {
         startRefresh(() => router.refresh());
       }

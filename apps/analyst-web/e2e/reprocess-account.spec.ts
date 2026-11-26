@@ -38,7 +38,7 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
     response.url().endsWith("/reprocess"));
   await reprocess.click();
   expect((await queued).status()).toBe(202);
-  await expect(page).toHaveURL(/\/workspace\/jobs\/\d+$/);
+  await expect(page).toHaveURL(url => /^\/workspace\/jobs\/\d+$/.test(url.pathname));
   const jobURL = page.url();
   await expect(page.getByRole("status")).toHaveText("Completed", { timeout: 15_000 });
   await expect(page.getByText(account.name, { exact: true })).toBeVisible();

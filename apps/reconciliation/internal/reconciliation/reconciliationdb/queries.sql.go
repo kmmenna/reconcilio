@@ -877,6 +877,40 @@ func (q *Queries) ListReviewQueue(ctx context.Context) ([]ListReviewQueueRow, er
 	return items, nil
 }
 
+const observeBusinessCounts = `-- name: ObserveBusinessCounts :one
+SELECT count(*) AS imported,
+       (SELECT count(*) FROM reconciliations WHERE method = 'automatic') AS automatic,
+       (SELECT count(*) FROM reconciliations WHERE method = 'manual') AS manual,
+       (SELECT count(*) FROM match_proposals WHERE status = 'rejected') AS rejected,
+       count(*) FILTER (WHERE m.transaction_id IS NULL AND t.source_side = 'internal') AS open_internal,
+       count(*) FILTER (WHERE m.transaction_id IS NULL AND t.source_side = 'external') AS open_external
+FROM transactions AS t
+LEFT JOIN reconciliation_members AS m ON m.transaction_id = t.id AND m.released_at IS NULL
+`
+
+type ObserveBusinessCountsRow struct {
+	Imported     int64
+	Automatic    int64
+	Manual       int64
+	Rejected     int64
+	OpenInternal int64
+	OpenExternal int64
+}
+
+func (q *Queries) ObserveBusinessCounts(ctx context.Context) (ObserveBusinessCountsRow, error) {
+	row := q.db.QueryRow(ctx, observeBusinessCounts)
+	var i ObserveBusinessCountsRow
+	err := row.Scan(
+		&i.Imported,
+		&i.Automatic,
+		&i.Manual,
+		&i.Rejected,
+		&i.OpenInternal,
+		&i.OpenExternal,
+	)
+	return i, err
+}
+
 const rankingCoversProposal = `-- name: RankingCoversProposal :one
 SELECT EXISTS (
     SELECT 1 FROM ranking_assessments WHERE evaluation_id = $1 AND proposal_id = $2

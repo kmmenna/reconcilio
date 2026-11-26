@@ -54,7 +54,11 @@ test.describe("Browser language preference", () => {
     await page.getByRole("button", { name: "Sair", exact: true }).click();
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("pt-BR");
 
+    const savedPreference = page.waitForResponse(response =>
+      response.url() === `${origin}/api/preferences/language` && response.request().method() === "POST",
+    );
     await page.getByRole("combobox", { name: "Idioma" }).selectOption("auto");
+    expect((await savedPreference).status()).toBe(204);
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");
     await page.reload();
     await expect(page.getByRole("combobox", { name: "Idioma" })).toHaveValue("auto");

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 	"uuid"
 
@@ -13,8 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/reconciliation/reconciliationdb"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/telemetry"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const reconcileKind = "reconcile_account"
@@ -42,6 +45,15 @@ type accountWorker struct {
 }
 
 func (w *accountWorker) Work(ctx context.Context, job *river.Job[ReconcileArgs]) error {
+	ctx, finish := telemetry.StartJob(ctx, telemetry.Work{JobID: job.ID, AccountID: job.Args.FinancialAccountID, Attempt: job.Attempt}, job.Metadata)
+	outcome := "panicked"
+	defer func() { finish(outcome) }()
+	err := w.process(ctx, job)
+	outcome = jobAttemptOutcome(err, job.Attempt, job.MaxAttempts)
+	return err
+}
+
+func (w *accountWorker) process(ctx context.Context, job *river.Job[ReconcileArgs]) error {
 	if err := river.MetadataSet(ctx, accountDeferredMetadata, false); err != nil {
 		return err
 	}
@@ -53,11 +65,11 @@ func (w *accountWorker) Work(ctx context.Context, job *river.Job[ReconcileArgs])
 		pool: w.pool, accountID: pgtype.UUID{Bytes: id, Valid: true}, jobID: job.ID,
 		token: pgtype.UUID{Bytes: uuid.New(), Valid: true},
 	}
-	acquireCtx, finish := context.WithTimeout(ctx, accountLeaseOperationTimeout)
+	acquireCtx, finishAcquire := context.WithTimeout(ctx, accountLeaseOperationTimeout)
 	rows, err := w.queries.AcquireAccountLease(acquireCtx, reconciliationdb.AcquireAccountLeaseParams{
 		FinancialAccountID: attempt.accountID, AttemptToken: attempt.token, LeaseDuration: leaseDuration(),
 	})
-	finish()
+	finishAcquire()
 	if err != nil {
 		return fmt.Errorf("acquire reconciliation account lease: %w", err)
 	}
@@ -83,6 +95,22 @@ func (w *accountWorker) Work(ctx context.Context, job *river.Job[ReconcileArgs])
 	return errors.Join(err, context.Cause(workCtx))
 }
 
+func jobAttemptOutcome(err error, attempt, maxAttempts int) string {
+	if err == nil {
+		return "completed"
+	}
+	if _, ok := errors.AsType[*river.JobSnoozeError](err); ok {
+		return "deferred"
+	}
+	if _, ok := errors.AsType[*river.JobCancelError](err); ok {
+		return "cancelled"
+	}
+	if attempt >= maxAttempts {
+		return "failed"
+	}
+	return "retrying"
+}
+
 type Queue struct {
 	stopped chan struct{}
 	pool    *pgxpool.Pool
@@ -92,7 +120,7 @@ type Queue struct {
 
 func NewQueue(pool *pgxpool.Pool, processor AccountProcessor, workerEnabled bool) (*Queue, error) {
 	queries := reconciliationdb.New(pool)
-	config := &river.Config{}
+	config := &river.Config{Logger: slog.Default()}
 	if workerEnabled {
 		config.Workers = river.NewWorkers()
 		if err := river.AddWorkerSafely(config.Workers, &accountWorker{processor: processor, pool: pool, queries: queries}); err != nil {
@@ -128,7 +156,11 @@ func (q *Queue) Stopped() <-chan struct{} {
 }
 
 func (q *Queue) EnqueueTx(ctx context.Context, tx pgx.Tx, accountID pgtype.UUID) (int64, error) {
-	result, err := q.client.InsertTx(ctx, tx, ReconcileArgs{FinancialAccountID: accountID.String()}, nil)
+	metadata, err := telemetry.JobMetadata(ctx)
+	if err != nil {
+		return 0, err
+	}
+	result, err := q.client.InsertTx(ctx, tx, ReconcileArgs{FinancialAccountID: accountID.String()}, &river.InsertOpts{Metadata: metadata})
 	if err != nil {
 		return 0, fmt.Errorf("enqueue reconciliation: %w", err)
 	}
@@ -149,5 +181,9 @@ func (q *Queue) Reprocess(ctx context.Context, accountID pgtype.UUID) (int64, er
 		id, err = q.EnqueueTx(ctx, tx, accountID)
 		return err
 	})
+	if err == nil {
+		telemetry.SetSpanAttributes(ctx, attribute.Int64("job_id", id), attribute.String("financial_account_id", accountID.String()))
+		slog.InfoContext(ctx, "Reconciliation job queued", "job_id", id, "financial_account_id", accountID.String())
+	}
 	return id, err
 }

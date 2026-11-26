@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/openairank"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/reconciliation"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/telemetry"
 )
 
 func configureRanking() (reconciliation.RankingOptions, error) {
@@ -35,12 +35,19 @@ func configureRanking() (reconciliation.RankingOptions, error) {
 			*dest = int32(limit)
 		}
 	}
-	if options.Ranker != nil {
-		options.Observe = func(ctx context.Context, event reconciliation.RankingEvent) {
-			if event.FallbackReason != "" {
-				slog.InfoContext(ctx, "Review group using engine order", "reason", event.FallbackReason, "provider", event.Provider)
-			}
-		}
-	}
 	return options, nil
+}
+
+func rankingObserver(signals *telemetry.Runtime) func(context.Context, reconciliation.RankingEvent) {
+	return func(ctx context.Context, event reconciliation.RankingEvent) {
+		observation := telemetry.RankingObservation{
+			Provider: event.Provider, Model: event.Model, Attempted: event.Attempted,
+			StartedAt: event.StartedAt, Duration: event.Duration, FallbackReason: event.FallbackReason,
+		}
+		if event.Usage != nil {
+			observation.InputTokens = &event.Usage.InputTokens
+			observation.OutputTokens = &event.Usage.OutputTokens
+		}
+		signals.ObserveRanking(ctx, observation)
+	}
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
@@ -22,7 +23,7 @@ export function SignInForm() {
     setBusy(true);
     const fields = new FormData(event.currentTarget);
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await correlatedFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: fields.get("username"), password: fields.get("password") }),

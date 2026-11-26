@@ -1,5 +1,6 @@
 "use client";
 
+import { correlatedFetch } from "@/lib/correlation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -117,7 +118,7 @@ export function AccountForm({ kind, displayName }: { kind: FormKind; displayName
 
     setBusy(true);
     try {
-      const response = await fetch(form.path, {
+      const response = await correlatedFetch(form.path, {
         method: form.method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
