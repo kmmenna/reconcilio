@@ -81,3 +81,7 @@ exec node scripts/orchestration-env.mjs sh -c '
   exec node scripts/reconciliation-dev.mjs
 '
 '''
+
+[tasks."bootstrap-admin"]
+description = "Create the initial administrator using a running, migrated database"
+run = "node scripts/orchestration-env.mjs node scripts/bootstrap-admin.mjs"
