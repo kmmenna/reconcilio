@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { verifyOpenTransactions } from "./open-transactions";
+import { changeWorkspaceLanguage } from "./workspace-language";
 
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
@@ -58,14 +59,14 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await page.reload();
     await expect(page.getByRole("heading", { name: "Import confirmed" })).toBeVisible();
 
-    await page.getByLabel("Language").selectOption("pt-BR");
+    await changeWorkspaceLanguage(page, "pt-BR");
     await expect(page.getByRole("heading", { name: "Importação confirmada" })).toBeVisible();
     await page.getByRole("link", { name: "Acompanhar processamento" }).click();
     await expect(page.getByRole("heading", { name: "Processamento da conciliação" })).toBeVisible();
     await expect(page.getByRole("status")).toHaveText("Concluído", { timeout: 15_000 });
     const jobURL = page.url();
 
-    await page.getByLabel("Idioma").selectOption("en");
+    await changeWorkspaceLanguage(page, "en");
     await expect(page.getByRole("status")).toHaveText("Completed");
     await expect(page).toHaveURL(jobURL);
 
@@ -102,7 +103,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await verifyOpenTransactions(page);
   await page.goto(detailURL);
 
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("heading", { name: "Detalhes da conciliação" })).toBeVisible();
   await expect(page.getByText("-R$ 89,90", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("16 de nov. de 2026", { exact: true }).first()).toBeVisible();
@@ -121,7 +122,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
     await page.getByRole("button", { name: "Preview CSV" }).click();
   }
 
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   const conflictFixture = resolve(__dirname, "../../../examples/test-cases/reimport-amount-conflict.csv");
   await uploadReimport(conflictFixture);
@@ -135,7 +136,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   expect(crossOriginCancel.status()).toBe(403);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("heading", { name: "Conflitos de referência da fonte" })).toBeVisible();
   await expect(amountComparison.getByRole("columnheader", { name: "Transação registrada" })).toBeVisible();
   await expect(amountComparison.getByRole("cell", { name: "-R$ 89,90", exact: true })).toBeVisible();
@@ -150,7 +151,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(page).toHaveURL(conflictURL);
   await expect(amountComparison.getByRole("cell", { name: "-R$ 89,90", exact: true })).toBeVisible();
 
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(page.getByRole("heading", { name: "Import canceled" })).toBeVisible();
   await expect(page.getByText("The import was canceled with these conflicts.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Track processing" })).toHaveCount(0);
@@ -226,12 +227,12 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   });
   const overlap = page.getByRole("alert").filter({ hasText: "The dates overlap an earlier import" });
   await expect(overlap).toContainText("Corporate Card covers Nov 16, 2026 through Nov 22, 2026");
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   const localizedOverlap = page.getByRole("alert").filter({ hasText: "As datas se sobrepõem" });
   await expect(localizedOverlap).toContainText("Corporate Card abrange o período de 16 de nov. de 2026 a 22 de nov. de 2026");
 
   await page.goto(detailURL);
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
   await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
   await page.getByRole("link", { name: "Reconcilio" }).click();
   await page.getByRole("link", { name: "Review queue" }).click();
@@ -261,7 +262,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   const staleProposal = await context.newPage();
   await staleProposal.goto(new URL(adobeLink, origin).href);
   await expect(staleProposal.getByText("Pending", { exact: true })).toBeVisible();
-  await staleProposal.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(staleProposal, "pt-BR");
   await expect(staleProposal.getByRole("heading", { name: "Evidências originais da proposta" })).toBeVisible();
   await expect(staleProposal).toHaveURL(new URL(adobeLink, origin).href);
   const crossOriginDecision = await page.request.post(`${origin}/api${adobeLink.replace("/workspace", "")}/reject`, {
@@ -306,7 +307,7 @@ test("reconciles demo imports, reviews reimport conflicts, and preserves proposa
   await expect(staleProposal.getByText("ADOBE* CLOUD", { exact: true })).toBeVisible();
   await expect(staleProposal.getByText("-R$ 250,00", { exact: true }).first()).toBeVisible();
   await staleProposal.reload();
-  await staleProposal.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(staleProposal, "en");
   await expect(staleProposal.getByText("Invalidated", { exact: true })).toBeVisible();
   await expect(staleProposal.getByRole("heading", { name: "Original Match Evidence" })).toBeVisible();
   await expect(staleProposal).toHaveURL(staleURL);

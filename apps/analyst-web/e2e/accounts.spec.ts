@@ -21,6 +21,10 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   const adminMenu = header.getByRole("button", { name: "Administrator admin", exact: true });
   const accountMenu = header.getByRole("button", { name: `${displayName} ${username}`, exact: true });
   const signOut = page.getByRole("menuitem", { name: "Sign out", exact: true });
+  const language = page.getByRole("contentinfo").getByRole("button", { name: /^(Language|Idioma)$/ });
+  const languageMenu = page.getByRole("menu", { name: /^(Language|Idioma)$/ });
+  const brazilianPortuguese = languageMenu.getByRole("menuitemradio", { name: "Português (Brasil)", exact: true });
+  const english = languageMenu.getByRole("menuitemradio", { name: "English", exact: true });
 
   await page.goto(`${origin}/login`);
   await signIn(page, "admin", adminPassword);
@@ -53,13 +57,16 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await fillAccount();
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("This username is already in use. Choose a different one.");
 
-  await page.getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
+  await language.click();
+  await brazilianPortuguese.click();
   await expect(page.getByRole("heading", { name: "Criar usuário" })).toBeVisible();
   await expect(header.getByRole("link", { name: "Criar usuário", exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("Este nome de usuário já está em uso. Escolha outro.");
   await expect(page.getByLabel("Nome de usuário")).toHaveValue(username);
   await expect(page).toHaveURL(`${origin}/workspace/users/new`);
-  await page.getByRole("combobox", { name: "Idioma" }).selectOption("en");
+  await language.click();
+  await expect(brazilianPortuguese).toBeChecked();
+  await english.click();
 
   await expect(page.getByRole("heading", { name: "Create user" })).toBeVisible();
   await adminMenu.click();
@@ -94,7 +101,8 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   await expect(updatedAccountMenu).toBeVisible();
 
   await test.step("reach both menu actions with a long account name in a short viewport", async () => {
-    await page.getByRole("contentinfo").getByRole("combobox", { name: "Language" }).selectOption("pt-BR");
+    await language.click();
+    await brazilianPortuguese.click();
     await expect(page.getByRole("heading", { name: "Meu perfil", exact: true })).toBeVisible();
 
     const menu = page.getByRole("menu");
@@ -117,7 +125,8 @@ test("creates an analyst and lets them update their own profile and sign-in cred
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.getByRole("contentinfo").getByRole("combobox", { name: "Idioma" }).selectOption("en");
+    await language.click();
+    await english.click();
     await expect(page.getByRole("heading", { name: "My profile", exact: true })).toBeVisible();
   });
 

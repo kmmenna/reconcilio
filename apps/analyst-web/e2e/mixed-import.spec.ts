@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { changeWorkspaceLanguage } from "./workspace-language";
+
 const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
 test.use({ locale: "en-US" });
@@ -52,10 +54,10 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await page.getByRole("button", { name: "Preview CSV" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Line 3 · Financial Account");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("missing-bank");
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Linha 3 · Conta financeira");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("O código missing-bank não está cadastrado.");
-  await page.getByLabel("Idioma").selectOption("en");
+  await changeWorkspaceLanguage(page, "en");
 
   await page.getByLabel("CSV file").setInputFiles(file("operating-bank"));
   await page.getByRole("button", { name: "Preview CSV" }).click();
@@ -77,7 +79,7 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
   await expect(page.getByRole("main").getByRole("alert")).toContainText("The Source side changed");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Internal");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("External");
-  await page.getByLabel("Language").selectOption("pt-BR");
+  await changeWorkspaceLanguage(page, "pt-BR");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Interno");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Externo");
   await expect(page).toHaveURL(originalURL);
