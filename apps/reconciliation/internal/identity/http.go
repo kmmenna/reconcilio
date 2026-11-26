@@ -53,6 +53,7 @@ func (s *Service) RegisterHTTP(api huma.API) {
 		Errors:      []int{http.StatusUnauthorized},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, s.currentUser)
+	s.registerAccountHTTP(api)
 }
 
 func (s *Service) signIn(ctx context.Context, in *loginInput) (*loginOutput, error) {
