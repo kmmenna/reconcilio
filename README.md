@@ -17,6 +17,8 @@ mise run compose:up
 mise run bootstrap-admin
 ```
 
+Keep `RECONCILIO_API_ENABLED` enabled when using `mise run compose:up`. The browser app waits for the API health check before starting, and the task waits for the full stack to be ready.
+
 Bootstrap requires a running, migrated database. With a running Compose backend, the task uses that container's database, including any explicit `DATABASE_URL`.
 
 Open [Reconcilio on localhost:3000](http://localhost:3000) and sign in as `admin` with the generated password. The bootstrap command prints the password only when creating the account. Save it for later sign-ins. The API generates a signing key at startup when `JWT_SECRET` is unset, so restarting the API then requires signing in again. Set a randomly generated secret of at least 32 bytes to keep existing tokens valid through a restart.
@@ -62,6 +64,8 @@ ANALYST_WEB_PORT=3001
 ```
 
 Run `mise run compose:up` in each worktree. The browser apps open on [localhost:3000](http://localhost:3000) and [localhost:3001](http://localhost:3001). Each project has its own PostgreSQL volume and needs its own initial administrator.
+
+To stay signed in to both instances in the same browser profile, open each at a different hostname. Session cookies are shared across ports on the same hostname. For example, keep `http://localhost:3000` for the first worktree, set `WEB_ORIGIN=http://127.0.0.1:3001` in the second worktree's `apps/analyst-web/.env`, and open [127.0.0.1:3001](http://127.0.0.1:3001) there.
 
 ### Run the Next.js frontend on the host
 
@@ -145,12 +149,15 @@ mise install
 mise run web:install
 mise run check
 mise run build
+mise run test:environment
 mise run test
 ```
 
+`mise run test:environment` checks environment configuration and provider selection. It requires Docker Compose to generate the configuration, with no running container engine. To pass flags through to the Go suite, use `mise run test -- -run TestName`.
+
 GitHub Actions runs the same build, lint, static analysis, PostgreSQL integration tests, and browser smoke tasks. Run `mise run db:generate` after changing module SQL or the schema. Install local Git hooks with `mise exec -- lefthook install`.
 
-For the browser smoke tests, install Playwright Chromium after the web dependencies. Both variants use the selected engine and its Docker Compose provider. Each run creates its own Compose project, database credentials, and PostgreSQL volume, then removes its containers, network, and volume when it exits. The smoke task chooses a free loopback frontend port by default. Set `RECONCILIO_SMOKE_PORT` to use a specific free port.
+For the browser smoke tests, install Playwright Chromium after the web dependencies. Both variants use the selected engine and its Docker Compose provider. Each run creates its own Compose project, database credentials, and PostgreSQL volume, then removes its containers, network, volume, and build image tags when it exits. The smoke task chooses a free loopback frontend port by default. Set `RECONCILIO_SMOKE_PORT` to use a specific free port.
 
 ```sh
 mise run browser:install

@@ -68,10 +68,13 @@ function composeConfig(directory, env = {}) {
     'set -eu',
     '[ "$*" = "compose up --build -d --wait" ]',
     'export PATH="$TEST_DOCKER_PATH"',
-    'if command -v docker-compose >/dev/null; then',
-    '  exec docker-compose config --format json > "$TEST_CONFIG"',
+    'if docker compose version >/dev/null 2>&1; then',
+    '  exec docker compose config --format json > "$TEST_CONFIG"',
     'fi',
-    'exec docker compose config --format json > "$TEST_CONFIG"',
+    'if [ -n "${PODMAN_COMPOSE_PROVIDER:-}" ]; then',
+    '  exec "$PODMAN_COMPOSE_PROVIDER" config --format json > "$TEST_CONFIG"',
+    'fi',
+    'exec docker-compose config --format json > "$TEST_CONFIG"',
   ].join('\n'), { mode: 0o700 });
   const config = join(directory, 'config.json');
   runTask(directory, 'compose:up', {
@@ -168,4 +171,47 @@ test('an explicit database URL goes to both migration and API', (t) => {
   assert.equal(services.backend.environment.DATABASE_URL, url);
   assert.equal(services.migrate.environment.DATABASE_URL, url);
   assert.equal(services['analyst-web'].environment.WEB_ORIGIN, 'http://127.0.0.1:3101');
+});
+
+test('Podman falls back to the Docker CLI plugin when docker-compose on PATH is legacy', (t) => {
+  const directory = worktree(t);
+  const bin = join(directory, 'bin');
+  const plugin = join(directory, 'cli plugins', 'docker-compose');
+  const commandLog = join(directory, 'compose-command.log');
+  const executable = { mode: 0o700 };
+  mkdirSync(bin);
+  mkdirSync(join(directory, 'cli plugins'));
+  writeFileSync(join(bin, 'docker-compose'), [
+    '#!/bin/sh',
+    '[ "$1" = version ] || exit 1',
+    'printf "%s\\n" "docker-compose version 1.29.2, build unknown"',
+  ].join('\n'), executable);
+  writeFileSync(join(bin, 'docker'), [
+    '#!/bin/sh',
+    '[ "$1" = info ] || exit 1',
+    'printf "%s\\n" "$TEST_COMPOSE_PLUGIN"',
+  ].join('\n'), executable);
+  writeFileSync(join(bin, 'podman'), [
+    '#!/bin/sh',
+    '[ "$1" = compose ] || exit 1',
+    'shift',
+    'exec "$PODMAN_COMPOSE_PROVIDER" "$@"',
+  ].join('\n'), executable);
+  writeFileSync(plugin, [
+    '#!/bin/sh',
+    'if [ "$1" = version ]; then',
+    '  printf "%s\\n" "Docker Compose version v5.8.0"',
+    'else',
+    '  printf "%s\\n" "$@" > "$TEST_COMPOSE_COMMAND_LOG"',
+    'fi',
+  ].join('\n'), executable);
+
+  runTask(directory, 'compose:logs', {
+    CONTAINER_ENGINE: 'podman',
+    PODMAN_COMPOSE_PROVIDER: '',
+    TEST_COMPOSE_PLUGIN: plugin,
+    TEST_COMPOSE_COMMAND_LOG: commandLog,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+  assert.equal(readFileSync(commandLog, 'utf8'), 'logs\n');
 });

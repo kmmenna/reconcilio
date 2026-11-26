@@ -18,6 +18,8 @@ The Compose database uses `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD
 
 The Compose API and migration step both use `DATABASE_URL` when configured. With the default URL, both connect to the `postgres` service using the configured database, role, and password. The migration step applies the application and River queue migrations to its connection target before the API starts.
 
+`mise run compose:up` starts the full stack and waits for it to be ready. Keep `RECONCILIO_API_ENABLED` enabled so the API can pass its health check and the browser app can start.
+
 In both modes, Compose publishes PostgreSQL on a dynamically assigned port on `127.0.0.1`. `mise run reconciliation:dev` waits for PostgreSQL and combines its published port with the backend's PostgreSQL initialization settings to connect from the host. The task uses that connection for the current checkout's Go migration command and API, even when `DATABASE_URL` is set for Compose. With the default Compose connection, switching modes on the same engine and project reuses the same named volume.
 
 ## Frontend origins
@@ -26,10 +28,14 @@ In both modes, Compose publishes PostgreSQL on a dynamically assigned port on `1
 
 `WEB_ORIGIN` is the address used by the browser. It defaults to `http://localhost` on the configured `ANALYST_WEB_PORT`. Set it to the browser-facing scheme, hostname, and port when opening the app from another origin, such as `http://127.0.0.1:3001`. The frontend checks that browser login and other writes originate at that address.
 
+When opening multiple worktrees in the same browser profile, use a different hostname for each `WEB_ORIGIN` to keep sign-ins independent. The browser shares session cookies across ports on the same hostname.
+
 ## Tests
 
-`mise run test` runs the Go suite and starts PostgreSQL through Testcontainers. It uses the active Docker CLI endpoint for `CONTAINER_ENGINE=docker` and the Podman Compose-compatible endpoint for `CONTAINER_ENGINE=podman`. Start the selected daemon, API service, or machine first. With a custom Podman socket, export its `unix://` URL as `DOCKER_HOST`. Clear any conflicting `tc.host` in `~/.testcontainers.properties` so Testcontainers uses the selected endpoint. If Ryuk cannot access the Podman socket, set `TESTCONTAINERS_RYUK_DISABLED=true`. The tests each register cleanup for their PostgreSQL containers.
+`mise run test:environment` checks environment configuration and provider selection. It uses Docker Compose to render the configuration and can run with the engine stopped.
+
+`mise run test` runs the Go suite and starts PostgreSQL through Testcontainers. Pass Go test flags with `mise run test -- -run TestName`. The task uses the active Docker CLI endpoint for `CONTAINER_ENGINE=docker` and the Podman Compose-compatible endpoint for `CONTAINER_ENGINE=podman`. Start the selected daemon, API service, or machine first. With a custom Podman socket, export its `unix://` URL as `DOCKER_HOST`. Clear any conflicting `tc.host` in `~/.testcontainers.properties` so Testcontainers uses the selected endpoint. If Ryuk cannot access the Podman socket, set `TESTCONTAINERS_RYUK_DISABLED=true`. The tests each register cleanup for their PostgreSQL containers.
 
 Install web dependencies with `mise run web:install` and Playwright Chromium with `mise run browser:install`. Run `mise run smoke` for the browser workflow or `RECONCILIO_SMOKE_RANKING=true mise run smoke` for the controlled ranking workflow. Both use Docker Compose on the selected engine.
 
-Smoke tests run in their own Compose project with disposable PostgreSQL credentials, a separate volume, and test ports. The API port is dynamically assigned. The frontend uses a free loopback port or the `RECONCILIO_SMOKE_PORT` override. Smoke uses its own service settings and the ranking variant uses a local provider. Each run removes its containers, network, and database volume when it exits, so the worktree stack and its data remain available.
+Smoke tests run in their own Compose project with disposable PostgreSQL credentials, a separate volume, and test ports. The API port is dynamically assigned. The frontend uses a free loopback port or the `RECONCILIO_SMOKE_PORT` override. Smoke uses its own service settings and the ranking variant uses a local provider. Each run removes its containers, network, database volume, and build image tags when it exits, so the worktree stack and its data remain available.

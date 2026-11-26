@@ -50,6 +50,10 @@ depends = ["build:go", "build:web"]
 description = "Run the Go tests with PostgreSQL on the selected container engine"
 run = "node scripts/orchestration-env.mjs sh scripts/test.sh"
 
+[tasks."test:environment"]
+description = "Test environment configuration and Compose provider selection"
+run = "node --test scripts/compose-env.test.mjs"
+
 [tasks."browser:install"]
 dir = "apps/analyst-web"
 run = "npm exec -- playwright install --with-deps chromium"
