@@ -20,6 +20,6 @@ The Compose API and migration step both use `DATABASE_URL` when configured. With
 
 ## Frontend origins
 
-`BACKEND_API_ORIGIN` is the Go API URL used by the Next.js server. It defaults to `http://backend:8080` under Compose, including when the API is published on a custom host port.
+`BACKEND_API_ORIGIN` is the Go API URL used by the Next.js server. It defaults to `http://backend:8080` under Compose, including when the API is published on a custom host port. With `mise run analyst-web:dev`, it defaults to `http://localhost:<RECONCILIATION_API_PORT>`. An explicit value in `apps/analyst-web/.env` applies in both modes.
 
 `WEB_ORIGIN` is the address used by the browser. It defaults to `http://localhost` on the configured `ANALYST_WEB_PORT`. Set it to the browser-facing scheme, hostname, and port when opening the app from another origin, such as `http://127.0.0.1:3001`. The frontend checks that browser login and other writes originate at that address.
