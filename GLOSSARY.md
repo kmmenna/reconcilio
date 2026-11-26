@@ -16,6 +16,9 @@ A financial record received from a **Source**.
 **Money**:
 A signed amount in a specific currency.
 
+**Import Coverage**:
+The inclusive date interval an import is treated as covering for one **Source** and one **Financial Account**.
+
 **Source Reference**:
 A stable identifier assigned by a **Source** that uniquely identifies a **Transaction** within that source and **Financial Account** across deliveries.
 
