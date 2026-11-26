@@ -165,14 +165,17 @@ func TestCatalogAndMixedImports(t *testing.T) {
 	t.Run("reports missing and unrecognized Financial Account codes by CSV line", func(t *testing.T) {
 		data := mixedHeader +
 			"ERP-1,,2026-11-02,10,BRL,First,unregistered-bank\n" +
-			"ERP-2,,2026-11-03,240,JPY,Second,\n"
+			"ERP-2,,2026-11-03,240,JPY,Second,\n" +
+			"ERP-3,,2026-11-03,300,JPY,Third\n"
 		var result httpapi.Problem
 		readResponse(t, upload("", start, end, data), http.StatusUnprocessableEntity, &result)
-		if result.Code != "invalid_csv" || len(result.Issues) != 2 ||
+		if result.Code != "invalid_csv" || len(result.Issues) != 3 ||
 			result.Issues[0].Line != 2 || result.Issues[0].Field != "financial_account" ||
 			result.Issues[0].Reason != "unknown_financial_account" || result.Issues[0].Value != "unregistered-bank" ||
 			result.Issues[1].Line != 3 || result.Issues[1].Field != "financial_account" ||
-			result.Issues[1].Reason != "missing_financial_account" {
+			result.Issues[1].Reason != "missing_financial_account" ||
+			result.Issues[2].Line != 4 || result.Issues[2].Field != "financial_account" ||
+			result.Issues[2].Reason != "missing_financial_account" {
 			t.Fatalf("unexpected row errors: %+v", result)
 		}
 	})
@@ -322,6 +325,19 @@ func TestCatalogAndMixedImports(t *testing.T) {
 		readResponse(t, upload(demoAccount.ID, start, end, csvHeader+",,2026-12-06,9,BRL,First corporate import\n"),
 			http.StatusCreated, &prior)
 		readResponse(t, action(prior.ID, "confirm"), http.StatusOK, new(any))
+	})
+
+	t.Run("scopes identical file replay to the exact account assignments", func(t *testing.T) {
+		const start, end = "2027-01-05", "2027-01-05"
+		const data = csvHeader + ",,2027-01-05,5,BRL,Statement\n"
+		var first, second stagedImport
+		readResponse(t, upload(account.ID, start, end, data), http.StatusCreated, &first)
+		readResponse(t, action(first.ID, "confirm"), http.StatusOK, new(any))
+		readResponse(t, upload(demoAccount.ID, start, end, data), http.StatusCreated, &second)
+		if second.ID == first.ID || len(second.Accounts) != 1 || second.Accounts[0].ID != demoAccount.ID {
+			t.Fatalf("replay selected a different account assignment: %+v", second)
+		}
+		readResponse(t, action(second.ID, "confirm"), http.StatusOK, new(any))
 	})
 
 	t.Run("serializes a Source side edit against confirmation", func(t *testing.T) {

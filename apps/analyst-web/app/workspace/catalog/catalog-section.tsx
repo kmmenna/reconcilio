@@ -153,6 +153,7 @@ function CatalogEditor({ collection, entry, onCancel, onSaved }: {
               defaultValue={source?.side ?? "internal"}
               disabled={source?.side_editable === false}
               id={`${field}-side`}
+              key={source?.side_editable === false ? source.side : "editable"}
               name="side"
               required
             >

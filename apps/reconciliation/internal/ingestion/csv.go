@@ -97,11 +97,14 @@ func parseCSV(data []byte, start, end time.Time, accountsByCode map[string]strin
 			break
 		}
 		if parseError, ok := errors.AsType[*csv.ParseError](err); ok {
-			reason := "invalid_record"
+			field, reason := "row", "invalid_record"
 			if errors.Is(err, csv.ErrFieldCount) {
 				reason = "invalid_column_count"
+				if mixed && accountColumn == len(header)-1 && len(record) == accountColumn {
+					field, reason = financialAccountColumn, "missing_financial_account"
+				}
 			}
-			issues = append(issues, issue(parseError.StartLine, "row", reason))
+			issues = append(issues, issue(parseError.StartLine, field, reason))
 			// An unclosed quoted field can consume subsequent physical lines.
 			if reason == "invalid_record" || len(issues) >= maxRowIssues {
 				break
