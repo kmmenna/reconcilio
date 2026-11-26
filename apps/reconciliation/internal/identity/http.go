@@ -54,6 +54,7 @@ func (s *Service) RegisterHTTP(api huma.API) {
 		Errors:      []int{http.StatusUnauthorized},
 		Security:    []map[string][]string{{"bearer": {}}},
 	}, s.currentUser)
+	s.registerAccountHTTP(api)
 }
 
 func (s *Service) signIn(ctx context.Context, in *loginInput) (*loginOutput, error) {
@@ -72,20 +73,28 @@ func (s *Service) signIn(ctx context.Context, in *loginInput) (*loginOutput, err
 }
 
 func (s *Service) currentUser(ctx context.Context, in *profileInput) (*profileOutput, error) {
-	scheme, raw, found := strings.Cut(in.Authorization, " ")
-	if !found || !strings.EqualFold(scheme, "Bearer") {
-		return nil, sessionRequired()
-	}
-	user, err := s.profile(ctx, strings.TrimSpace(raw))
-	if errors.Is(err, errCredentials) {
-		return nil, sessionRequired()
-	}
+	user, err := s.authorizedProfile(ctx, in.Authorization)
 	if err != nil {
-		slog.ErrorContext(ctx, "Could not load current user", "error", err)
-		return nil, huma.Error500InternalServerError("The profile is temporarily unavailable.")
+		return nil, err
 	}
 
 	return &profileOutput{CacheControl: "no-store", Body: user}, nil
+}
+
+func (s *Service) authorizedProfile(ctx context.Context, authorization string) (userProfile, error) {
+	scheme, raw, found := strings.Cut(authorization, " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") {
+		return userProfile{}, sessionRequired()
+	}
+	user, err := s.profile(ctx, strings.TrimSpace(raw))
+	if errors.Is(err, errCredentials) {
+		return userProfile{}, sessionRequired()
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "Could not load current user", "error", err)
+		return userProfile{}, huma.Error500InternalServerError("The profile is temporarily unavailable.")
+	}
+	return user, nil
 }
 
 func sessionRequired() error {

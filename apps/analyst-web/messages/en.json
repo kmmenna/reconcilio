@@ -25,6 +25,34 @@
     "signOut": "Sign out",
     "signingOut": "Signing out…"
   },
+  "Accounts": {
+    "workspace": "Back to workspace",
+    "profileTitle": "My profile",
+    "createTitle": "Create user",
+    "nameHeading": "Account details",
+    "passwordHeading": "Password",
+    "passwordDescription": "Use your new password the next time you sign in.",
+    "newAccountHeading": "Local account",
+    "createDescription": "This username and password let the analyst sign in to the workspace.",
+    "username": "Username",
+    "usernameHint": "Up to 100 characters. Usernames are case-sensitive.",
+    "displayName": "Display name",
+    "password": "Password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "passwordHint": "Use 8 to 512 characters.",
+    "createSubmit": "Create user",
+    "createPending": "Creating user…",
+    "profileSubmit": "Save display name",
+    "profilePending": "Saving…",
+    "passwordSubmit": "Change password",
+    "passwordPending": "Changing password…",
+    "accountCreated": "Account for {displayName} ({username}) created.",
+    "profileSaved": "Display name saved.",
+    "passwordSaved": "Password changed.",
+    "signInAgain": "Sign in again",
+    "unavailable": "Your account details could not be loaded. Reload the page and try again."
+  },
   "Errors": {
     "invalid_origin": "This request must come from the Reconcilio workspace.",
     "invalid_content_type": "Reload the page and try again.",
@@ -33,6 +61,16 @@
     "sign_in_unavailable": "Sign-in is temporarily unavailable. Try again in a moment.",
     "sign_out_unavailable": "Could not sign out. Try again.",
     "invalid_language": "Choose one of the available languages.",
-    "language_unavailable": "Could not change the language. Try again."
+    "language_unavailable": "Could not change the language. Try again.",
+    "session_required": "Your session has ended.",
+    "administrator_required": "Ask an administrator to create the account.",
+    "invalid_username": "Enter 1 to 100 characters for the username without line breaks or control characters.",
+    "invalid_display_name": "Enter 1 to 120 characters for the display name without line breaks or control characters.",
+    "invalid_current_password": "Enter your current password.",
+    "invalid_new_password": "Enter a password with 8 to 512 characters.",
+    "incorrect_current_password": "The current password is incorrect. Check it and try again.",
+    "username_taken": "This username is already in use. Choose a different one.",
+    "validation_failed": "Check the required fields and their length limits, then try again.",
+    "account_unavailable": "The account service is temporarily unavailable. Try again in a moment."
   }
 }
