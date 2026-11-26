@@ -1,36 +1,27 @@
 -- name: CreatePendingImport :one
 INSERT INTO imports (
-    source_id, source_side, financial_account_id, period_start, period_end,
-    file_fingerprint, preview, created_by
+    source_id, source_side, period_start, period_end, file_fingerprint, preview, created_by
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id;
+
+-- name: AssignImportAccounts :exec
+INSERT INTO import_financial_accounts (import_id, financial_account_id)
+SELECT sqlc.arg(import_id)::uuid, unnest(sqlc.arg(account_ids)::uuid[]);
+
+-- name: ListImportAccounts :many
+SELECT a.id, a.code, a.name
+FROM import_financial_accounts ia
+JOIN financial_accounts a ON a.id = ia.financial_account_id
+WHERE ia.import_id = $1
+ORDER BY a.id;
 
 -- name: GetImport :one
 SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
-       imports.financial_account_id, financial_accounts.code AS financial_account_code,
-       financial_accounts.name AS financial_account_name,
-       imports.period_start, imports.period_end, imports.preview, imports.receipt
-FROM imports
-JOIN sources ON sources.id = imports.source_id
-JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
-WHERE imports.id = $1;
-
--- name: GetImportAccountID :one
-SELECT financial_account_id
-FROM imports
-WHERE id = $1;
-
--- name: GetImportForConfirmation :one
-SELECT imports.id, imports.status, imports.source_id, sources.name AS source_name, imports.source_side,
-       sources.side AS current_source_side, imports.financial_account_id,
-       financial_accounts.code AS financial_account_code, financial_accounts.name AS financial_account_name,
        imports.period_start, imports.period_end, imports.file_fingerprint, imports.preview, imports.receipt
 FROM imports
 JOIN sources ON sources.id = imports.source_id
-JOIN financial_accounts ON financial_accounts.id = imports.financial_account_id
-WHERE imports.id = $1
-FOR SHARE OF sources;
+WHERE imports.id = $1;
 
 -- name: InsertTransactions :copyfrom
 INSERT INTO transactions (
@@ -53,9 +44,15 @@ WHERE id = $1;
 -- name: FindConfirmedReplay :one
 SELECT i.id, i.receipt
 FROM imports i
-JOIN import_coverage c ON c.import_id = i.id AND c.financial_account_id = i.financial_account_id
-WHERE i.source_id = $1 AND i.financial_account_id = $2 AND i.file_fingerprint = $3
-  AND i.status = 'confirmed'
+WHERE i.source_id = $1 AND i.file_fingerprint = $2 AND i.status = 'confirmed'
+  AND ARRAY(
+    SELECT ia.financial_account_id
+    FROM import_financial_accounts ia
+    WHERE ia.import_id = i.id
+    ORDER BY ia.financial_account_id
+  ) = sqlc.arg(account_ids)::uuid[]
+  -- Imports resolved as replays share the original receipt and have no coverage of their own.
+  AND EXISTS (SELECT 1 FROM import_coverage c WHERE c.import_id = i.id)
 ORDER BY i.confirmed_at, i.id
 LIMIT 1;
 

@@ -3,3 +3,13 @@
 //   sqlc v1.31.1
 
 package ingestiondb
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type FinancialAccount struct {
+	ID   pgtype.UUID
+	Code string
+	Name string
+}

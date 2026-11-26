@@ -2,16 +2,21 @@
 package ingestion
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
+	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 )
 
@@ -27,21 +32,32 @@ type previewRow struct {
 }
 
 type importView struct {
-	ID               string                   `json:"id" format:"uuid"`
-	Status           string                   `json:"status"`
-	Source           catalog.Source           `json:"source"`
-	FinancialAccount catalog.FinancialAccount `json:"financial_account"`
-	PeriodStart      string                   `json:"period_start" format:"date"`
-	PeriodEnd        string                   `json:"period_end" format:"date"`
-	Rows             []previewRow             `json:"rows,omitempty"`
-	Conflicts        []importConflict         `json:"conflicts,omitempty"`
-	Decision         string                   `json:"decision,omitempty" enum:"keep_original,cancel"`
-	ConfirmedAt      *time.Time               `json:"confirmed_at,omitempty"`
-	ConfirmedBy      string                   `json:"confirmed_by,omitempty" format:"uuid"`
-	CanceledAt       *time.Time               `json:"canceled_at,omitempty"`
-	CanceledBy       string                   `json:"canceled_by,omitempty" format:"uuid"`
-	TransactionCount *int64                   `json:"transaction_count,omitempty"`
-	Jobs             []scheduledJob           `json:"jobs,omitempty"`
+	ID                string                     `json:"id" format:"uuid"`
+	Status            string                     `json:"status"`
+	Source            catalog.Source             `json:"source"`
+	FinancialAccount  *catalog.FinancialAccount  `json:"financial_account,omitempty"`
+	FinancialAccounts []catalog.FinancialAccount `json:"financial_accounts,omitempty"`
+	PeriodStart       string                     `json:"period_start" format:"date"`
+	PeriodEnd         string                     `json:"period_end" format:"date"`
+	Rows              []previewRow               `json:"rows,omitempty"`
+	Conflicts         []importConflict           `json:"conflicts,omitempty"`
+	Decision          string                     `json:"decision,omitempty" enum:"keep_original,cancel"`
+	ConfirmedAt       *time.Time                 `json:"confirmed_at,omitempty"`
+	ConfirmedBy       string                     `json:"confirmed_by,omitempty" format:"uuid"`
+	CanceledAt        *time.Time                 `json:"canceled_at,omitempty"`
+	CanceledBy        string                     `json:"canceled_by,omitempty" format:"uuid"`
+	TransactionCount  *int64                     `json:"transaction_count,omitempty"`
+	Jobs              []scheduledJob             `json:"jobs,omitempty"`
+}
+
+type importAccount struct {
+	id    pgtype.UUID
+	entry catalog.FinancialAccount
+}
+
+type assessedAccount struct {
+	importAccount
+	accountAssessment
 }
 
 type Service struct {
@@ -55,14 +71,15 @@ func New(pool *pgxpool.Pool, entries *catalog.Service, jobs jobEnqueuer) *Servic
 	return &Service{pool: pool, queries: ingestiondb.New(pool), catalog: entries, jobs: jobs}
 }
 
-func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePendingImportParams, source catalog.Source, account catalog.FinancialAccount, rows []stagedRow) (importView, error) {
+func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePendingImportParams, accounts []importAccount, rows []stagedRow) (importView, error) {
 	var view importView
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := catalog.LockFinancialAccounts(ctx, tx, []pgtype.UUID{params.FinancialAccountID}); err != nil {
+		ids := accountIDs(accounts)
+		if err := catalog.LockFinancialAccounts(ctx, tx, ids); err != nil {
 			return err
 		}
 		queries := s.queries.WithTx(tx)
-		replay, err := findReplay(ctx, queries, params.SourceID, params.FinancialAccountID, params.FileFingerprint)
+		replay, err := findReplay(ctx, queries, params.SourceID, ids, params.FileFingerprint)
 		if err != nil {
 			return err
 		}
@@ -70,31 +87,114 @@ func (s *Service) savePreview(ctx context.Context, params ingestiondb.CreatePend
 			view, err = readReceipt(replay.Receipt)
 			return err
 		}
-
-		assessment, err := assessAccount(ctx, queries, params.SourceID, params.FinancialAccountID, rows)
+		source, err := catalog.LockSourceForImport(ctx, tx, params.SourceID)
 		if err != nil {
 			return err
 		}
-		if err := checkCoverage(ctx, queries, ingestiondb.FindBlockedCoverageParams{
-			SourceID: params.SourceID, FinancialAccountID: params.FinancialAccountID,
-			IncomingStart: params.PeriodStart, IncomingEnd: params.PeriodEnd,
-			IncomingHasSourceReferences: assessment.AllHaveSourceReferences,
-		}, account); err != nil {
-			return err
-		}
-		document := previewDocument{Rows: rows, Conflicts: assessment.Conflicts}
-		params.Preview, err = json.Marshal(document)
-		if err != nil {
-			return fmt.Errorf("encode preview rows: %w", err)
-		}
-		id, err := queries.CreatePendingImport(ctx, params)
-		if err != nil {
-			return err
-		}
-		view = presentPreview(id, source, account, params.PeriodStart, params.PeriodEnd, document)
-		return nil
+		view, err = stagePreview(ctx, queries, params, source, accounts, rows, false)
+		return err
 	})
 	return view, err
+}
+
+func (s *Service) refreshPreview(ctx context.Context, id, analystID pgtype.UUID) (importView, error) {
+	var view importView
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		queries := s.queries.WithTx(tx)
+		record, accounts, err := lockImportAccounts(ctx, tx, queries, id)
+		if err != nil {
+			return err
+		}
+		if record.Status != "pending" {
+			return errImportResolved
+		}
+		source, err := catalog.LockSourceForImport(ctx, tx, record.SourceID)
+		if err != nil {
+			return err
+		}
+		document, err := decodePreview(record.Preview)
+		if err != nil {
+			return err
+		}
+		replay, err := findReplay(ctx, queries, record.SourceID, accountIDs(accounts), record.FileFingerprint)
+		if err != nil {
+			return err
+		}
+		view, err = stagePreview(ctx, queries, ingestiondb.CreatePendingImportParams{
+			SourceID: record.SourceID, CreatedBy: analystID, PeriodStart: record.PeriodStart,
+			PeriodEnd: record.PeriodEnd, FileFingerprint: record.FileFingerprint,
+		}, source, accounts, document.Rows, replay.ID.Valid)
+		return err
+	})
+	return view, err
+}
+
+func stagePreview(ctx context.Context, queries *ingestiondb.Queries, params ingestiondb.CreatePendingImportParams, source catalog.Source, accounts []importAccount, rows []stagedRow, exactReplay bool) (importView, error) {
+	if issues := coverageDateIssues(rows, params.PeriodStart.Time, params.PeriodEnd.Time); len(issues) > 0 {
+		return importView{}, importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
+	}
+	document := previewDocument{Rows: rows}
+	if !exactReplay {
+		_, conflicts, err := assessImport(ctx, queries, params.SourceID, params.PeriodStart, params.PeriodEnd, accounts, rows)
+		if err != nil {
+			return importView{}, err
+		}
+		document.Conflicts = conflicts
+	}
+	params.SourceSide = source.Side
+	data, err := json.Marshal(document)
+	if err != nil {
+		return importView{}, fmt.Errorf("encode preview rows: %w", err)
+	}
+	params.Preview = data
+	id, err := queries.CreatePendingImport(ctx, params)
+	if err != nil {
+		return importView{}, err
+	}
+	if err := queries.AssignImportAccounts(ctx, ingestiondb.AssignImportAccountsParams{
+		ImportID: id, AccountIds: accountIDs(accounts),
+	}); err != nil {
+		return importView{}, fmt.Errorf("assign Financial Accounts to import: %w", err)
+	}
+	return presentPreview(id, source, accounts, params.PeriodStart, params.PeriodEnd, document), nil
+}
+
+func assessImport(ctx context.Context, queries *ingestiondb.Queries, sourceID pgtype.UUID, start, end pgtype.Date, accounts []importAccount, rows []stagedRow) ([]assessedAccount, []importConflict, error) {
+	grouped := make(map[string][]stagedRow, len(accounts))
+	for _, row := range rows {
+		// Pre-assignment previews only need the single account backfilled by the migration.
+		accountID := cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)
+		grouped[accountID] = append(grouped[accountID], row)
+	}
+	assessments := make([]assessedAccount, 0, len(accounts))
+	var conflicts []importConflict
+	var issues []httpapi.Issue
+	for _, account := range accounts {
+		assessment, err := assessAccount(ctx, queries, sourceID, account.id, grouped[account.entry.ID])
+		if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+			issues = append(issues, problem.Issues...)
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		assessments = append(assessments, assessedAccount{importAccount: account, accountAssessment: assessment})
+		conflicts = append(conflicts, assessment.Conflicts...)
+	}
+	if len(issues) > 0 {
+		slices.SortStableFunc(issues, func(a, b httpapi.Issue) int { return cmp.Compare(a.Line, b.Line) })
+		return nil, nil, importProblem("invalid_csv", "The CSV contains conflicting rows for a new Source Reference.", issues[:min(len(issues), maxRowIssues)]...)
+	}
+	for _, assessment := range assessments {
+		if err := checkCoverage(ctx, queries, ingestiondb.FindBlockedCoverageParams{
+			SourceID: sourceID, FinancialAccountID: assessment.id, IncomingStart: start, IncomingEnd: end,
+			IncomingHasSourceReferences: assessment.AllHaveSourceReferences,
+		}, assessment.entry); err != nil {
+			return nil, nil, err
+		}
+	}
+	slices.SortFunc(conflicts, func(a, b importConflict) int { return cmp.Compare(a.Line, b.Line) })
+	return assessments, conflicts, nil
 }
 
 func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (importView, error) {
@@ -105,22 +205,81 @@ func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (importView, e
 	if record.Status != "pending" {
 		return readReceipt(record.Receipt)
 	}
-	var document previewDocument
-	if err := json.Unmarshal(record.Preview, &document); err != nil {
-		return importView{}, fmt.Errorf("decode preview rows: %w", err)
+	accounts, err := listImportAccounts(ctx, s.queries, id)
+	if err != nil {
+		return importView{}, err
+	}
+	document, err := decodePreview(record.Preview)
+	if err != nil {
+		return importView{}, err
 	}
 	return presentPreview(
 		record.ID,
 		catalog.Source{ID: record.SourceID.String(), Name: record.SourceName, Side: record.SourceSide},
-		catalog.FinancialAccount{ID: record.FinancialAccountID.String(), Code: record.FinancialAccountCode, Name: record.FinancialAccountName},
-		record.PeriodStart, record.PeriodEnd,
-		document,
+		accounts, record.PeriodStart, record.PeriodEnd, document,
 	), nil
 }
 
-func findReplay(ctx context.Context, queries *ingestiondb.Queries, sourceID, accountID pgtype.UUID, fingerprint []byte) (ingestiondb.FindConfirmedReplayRow, error) {
+func lockImportAccounts(ctx context.Context, tx pgx.Tx, queries *ingestiondb.Queries, id pgtype.UUID) (ingestiondb.GetImportRow, []importAccount, error) {
+	accounts, err := listImportAccounts(ctx, queries, id)
+	if err != nil {
+		return ingestiondb.GetImportRow{}, nil, err
+	}
+	if err := catalog.LockFinancialAccounts(ctx, tx, accountIDs(accounts)); err != nil {
+		return ingestiondb.GetImportRow{}, nil, err
+	}
+	record, err := queries.GetImport(ctx, id)
+	return record, accounts, err
+}
+
+func listImportAccounts(ctx context.Context, queries *ingestiondb.Queries, id pgtype.UUID) ([]importAccount, error) {
+	entries, err := queries.ListImportAccounts(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, pgx.ErrNoRows
+	}
+	accounts := make([]importAccount, 0, len(entries))
+	for _, entry := range entries {
+		accounts = append(accounts, importAccount{id: entry.ID, entry: catalog.FinancialAccount{
+			ID: entry.ID.String(), Code: entry.Code, Name: entry.Name,
+		}})
+	}
+	return accounts, nil
+}
+
+func resolveImportAccounts(rows []stagedRow, registered []catalog.FinancialAccount) ([]importAccount, error) {
+	byID := make(map[string]catalog.FinancialAccount, len(registered))
+	for _, account := range registered {
+		byID[account.ID] = account
+	}
+	assigned := make(map[string]catalog.FinancialAccount)
+	for _, row := range rows {
+		assigned[row.FinancialAccountID] = byID[row.FinancialAccountID]
+	}
+	accounts := make([]importAccount, 0, len(assigned))
+	for _, key := range slices.Sorted(maps.Keys(assigned)) {
+		id, err := uuid.Parse(key)
+		if err != nil {
+			return nil, fmt.Errorf("decode registered Financial Account ID: %w", err)
+		}
+		accounts = append(accounts, importAccount{id: pgtype.UUID{Bytes: id, Valid: true}, entry: assigned[key]})
+	}
+	return accounts, nil
+}
+
+func accountIDs(accounts []importAccount) []pgtype.UUID {
+	ids := make([]pgtype.UUID, 0, len(accounts))
+	for _, account := range accounts {
+		ids = append(ids, account.id)
+	}
+	return ids
+}
+
+func findReplay(ctx context.Context, queries *ingestiondb.Queries, sourceID pgtype.UUID, accountIDs []pgtype.UUID, fingerprint []byte) (ingestiondb.FindConfirmedReplayRow, error) {
 	replay, err := queries.FindConfirmedReplay(ctx, ingestiondb.FindConfirmedReplayParams{
-		SourceID: sourceID, FinancialAccountID: accountID, FileFingerprint: fingerprint,
+		SourceID: sourceID, AccountIds: accountIDs, FileFingerprint: fingerprint,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ingestiondb.FindConfirmedReplayRow{}, nil
@@ -139,23 +298,40 @@ func readReceipt(data []byte) (importView, error) {
 	return receipt, nil
 }
 
-func presentPreview(id pgtype.UUID, source catalog.Source, account catalog.FinancialAccount, start, end pgtype.Date, document previewDocument) importView {
-	rows := make([]previewRow, 0, len(document.Rows))
+func decodePreview(data []byte) (previewDocument, error) {
+	var document previewDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		return previewDocument{}, fmt.Errorf("decode preview rows: %w", err)
+	}
+	return document, nil
+}
+
+func newImportView(id pgtype.UUID, source catalog.Source, accounts []importAccount, start, end pgtype.Date) importView {
+	view := importView{
+		ID: id.String(), Source: source, FinancialAccounts: make([]catalog.FinancialAccount, 0, len(accounts)),
+		PeriodStart: start.Time.Format(time.DateOnly), PeriodEnd: end.Time.Format(time.DateOnly),
+	}
+	for _, account := range accounts {
+		view.FinancialAccounts = append(view.FinancialAccounts, account.entry)
+	}
+	if len(accounts) == 1 {
+		view.FinancialAccount = new(accounts[0].entry)
+	}
+	return view
+}
+
+func presentPreview(id pgtype.UUID, source catalog.Source, accounts []importAccount, start, end pgtype.Date, document previewDocument) importView {
+	view := newImportView(id, source, accounts, start, end)
+	view.Status = "pending"
+	view.Conflicts = document.Conflicts
+	view.Rows = make([]previewRow, 0, len(document.Rows))
 	for _, row := range document.Rows {
-		rows = append(rows, previewRow{
+		row.FinancialAccountID = cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)
+		view.Rows = append(view.Rows, previewRow{
 			rowFields: row.rowFields,
 			Amount:    row.decimalAmount(),
 			Currency:  row.Currency,
 		})
 	}
-	return importView{
-		ID:               id.String(),
-		Status:           "pending",
-		Source:           source,
-		FinancialAccount: account,
-		PeriodStart:      start.Time.Format(time.DateOnly),
-		PeriodEnd:        end.Time.Format(time.DateOnly),
-		Rows:             rows,
-		Conflicts:        document.Conflicts,
-	}
+	return view
 }

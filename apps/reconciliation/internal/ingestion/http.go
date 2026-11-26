@@ -20,7 +20,7 @@ import (
 
 type importForm struct {
 	SourceID           string        `form:"source_id" format:"uuid"`
-	FinancialAccountID string        `form:"financial_account_id" format:"uuid"`
+	FinancialAccountID string        `form:"financial_account_id" format:"uuid" required:"false" doc:"Omit when the CSV specifies a financial_account code on each row."`
 	PeriodStart        string        `form:"period_start" format:"date"`
 	PeriodEnd          string        `form:"period_end" format:"date"`
 	File               huma.FormFile `form:"file" contentType:"text/plain"`
@@ -45,8 +45,10 @@ type confirmImportInput struct {
 }
 
 type importProblemContext struct {
-	Preview  *importView      `json:"preview,omitempty"`
-	Coverage *coverageOverlap `json:"coverage,omitempty"`
+	Preview           *importView      `json:"preview,omitempty"`
+	Coverage          *coverageOverlap `json:"coverage,omitempty"`
+	PreviewSourceSide string           `json:"preview_source_side,omitempty"`
+	CurrentSourceSide string           `json:"current_source_side,omitempty"`
 }
 
 type previewOutput struct {
@@ -103,6 +105,37 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: staged}, nil
 	})
 	huma.Register(api, huma.Operation{
+		OperationID:   "refresh-import-preview",
+		Method:        http.MethodPost,
+		Path:          "/api/imports/{id}/refresh-preview",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Regenerate an import preview from retained CSV rows",
+		Errors:        []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+		Security:      bearer,
+	}, func(ctx context.Context, in *getPreviewInput) (*previewOutput, error) {
+		analystID, err := identities.RequireUser(ctx, in.Authorization)
+		if err != nil {
+			return nil, err
+		}
+		id, err := uuid.Parse(in.ID)
+		if err != nil {
+			return nil, previewNotFound()
+		}
+		view, err := s.refreshPreview(ctx, pgtype.UUID{Bytes: id, Valid: true}, analystID)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, previewNotFound()
+		case errors.Is(err, errImportResolved):
+			return nil, importAlreadyResolved()
+		case err != nil:
+			if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+				return nil, problem
+			}
+			return nil, previewUnavailable(ctx, err)
+		}
+		return &previewOutput{Status: http.StatusCreated, CacheControl: "no-store", Body: view}, nil
+	})
+	huma.Register(api, huma.Operation{
 		OperationID: "confirm-import",
 		Method:      http.MethodPost,
 		Path:        "/api/imports/{id}/confirm",
@@ -141,10 +174,8 @@ func (s *Service) resolveImport(ctx context.Context, identities *identity.Servic
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, previewNotFound()
-	case errors.Is(err, errSourceSideChanged):
-		return nil, httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
 	case errors.Is(err, errImportResolved):
-		return nil, httpapi.NewProblem(http.StatusConflict, "import_already_resolved", "The import has already been resolved.")
+		return nil, importAlreadyResolved()
 	case err != nil:
 		if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
 			return nil, problem
@@ -156,23 +187,15 @@ func (s *Service) resolveImport(ctx context.Context, identities *identity.Servic
 }
 
 func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *importForm) (*previewOutput, error) {
-	params, issues := importSelections(form)
+	params, accountID, issues := importSelections(form)
 	if len(issues) > 0 {
 		return nil, importProblem("invalid_import_selection", "Check the import selections.", issues...)
 	}
-	source, err := s.catalog.GetSource(ctx, params.SourceID)
-	var account catalog.FinancialAccount
-	if err == nil {
-		account, err = s.catalog.GetFinancialAccount(ctx, params.FinancialAccountID)
-	}
-	switch {
-	case errors.Is(err, catalog.ErrSourceNotFound):
-		return nil, importProblem("invalid_import_selection", "Check the import selections.",
-			httpapi.Issue{Field: "source_id", Reason: "unknown_source"})
-	case errors.Is(err, catalog.ErrFinancialAccountNotFound):
-		return nil, importProblem("invalid_import_selection", "Check the import selections.",
-			httpapi.Issue{Field: "financial_account_id", Reason: "unknown_financial_account"})
-	case err != nil:
+	if _, err := s.catalog.GetSource(ctx, params.SourceID); err != nil {
+		if errors.Is(err, catalog.ErrSourceNotFound) {
+			return nil, importProblem("invalid_import_selection", "Check the import selections.",
+				httpapi.Issue{Field: "source_id", Reason: "unknown_source"})
+		}
 		return nil, previewUnavailable(ctx, err)
 	}
 	data, err := io.ReadAll(form.File)
@@ -181,25 +204,54 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *i
 	}
 	fingerprint := sha256.Sum256(data)
 	params.FileFingerprint = fingerprint[:]
-	replay, err := findReplay(ctx, s.queries, params.SourceID, params.FinancialAccountID, params.FileFingerprint)
-	if err != nil {
-		return nil, previewUnavailable(ctx, err)
-	}
-	if replay.ID.Valid {
-		receipt, err := readReceipt(replay.Receipt)
+	params.CreatedBy = userID
+
+	var accounts []importAccount
+	var registered []catalog.FinancialAccount
+	var accountsByCode map[string]string
+	if accountID.Valid {
+		account, err := s.catalog.GetFinancialAccount(ctx, accountID)
+		if errors.Is(err, catalog.ErrFinancialAccountNotFound) {
+			return nil, importProblem("invalid_import_selection", "Check the import selections.",
+				httpapi.Issue{Field: "financial_account_id", Reason: "unknown_financial_account"})
+		}
 		if err != nil {
 			return nil, previewUnavailable(ctx, err)
 		}
-		return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: receipt}, nil
+		accounts = []importAccount{{id: accountID, entry: account}}
+		replay, err := findReplay(ctx, s.queries, params.SourceID, []pgtype.UUID{accountID}, params.FileFingerprint)
+		if err != nil {
+			return nil, previewUnavailable(ctx, err)
+		}
+		if replay.ID.Valid {
+			receipt, err := readReceipt(replay.Receipt)
+			if err != nil {
+				return nil, previewUnavailable(ctx, err)
+			}
+			return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: receipt}, nil
+		}
+	} else {
+		registered, err = s.catalog.ListFinancialAccounts(ctx)
+		if err != nil {
+			return nil, previewUnavailable(ctx, err)
+		}
+		accountsByCode = make(map[string]string, len(registered))
+		for _, account := range registered {
+			accountsByCode[account.Code] = account.ID
+		}
 	}
-	rows, issues := parseCSV(data, params.PeriodStart.Time, params.PeriodEnd.Time)
+
+	rows, issues := parseCSV(data, params.PeriodStart.Time, params.PeriodEnd.Time, accountsByCode)
 	if len(issues) > 0 {
 		return nil, importProblem("invalid_csv", "The CSV contains invalid data.", issues...)
 	}
-
-	params.CreatedBy = userID
-	params.SourceSide = source.Side
-	staged, err := s.savePreview(ctx, params, source, account, rows)
+	if !accountID.Valid {
+		accounts, err = resolveImportAccounts(rows, registered)
+		if err != nil {
+			return nil, previewUnavailable(ctx, err)
+		}
+	}
+	staged, err := s.savePreview(ctx, params, accounts, rows)
 	if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
 		return nil, problem
 	}
@@ -213,7 +265,7 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, form *i
 	return &previewOutput{Status: status, CacheControl: "no-store", Body: staged}, nil
 }
 
-func importSelections(form *importForm) (ingestiondb.CreatePendingImportParams, []httpapi.Issue) {
+func importSelections(form *importForm) (ingestiondb.CreatePendingImportParams, pgtype.UUID, []httpapi.Issue) {
 	var issues []httpapi.Issue
 	add := func(field, reason string) {
 		issues = append(issues, httpapi.Issue{Field: field, Reason: reason})
@@ -224,7 +276,7 @@ func importSelections(form *importForm) (ingestiondb.CreatePendingImportParams, 
 		add("source_id", "invalid_source")
 	}
 	account, accountErr := uuid.Parse(form.FinancialAccountID)
-	if accountErr != nil {
+	if form.FinancialAccountID != "" && accountErr != nil {
 		add("financial_account_id", "invalid_financial_account")
 	}
 	start, validStart := parseDate(form.PeriodStart)
@@ -242,11 +294,10 @@ func importSelections(form *importForm) (ingestiondb.CreatePendingImportParams, 
 		add("file", "missing_file")
 	}
 	return ingestiondb.CreatePendingImportParams{
-		SourceID:           pgtype.UUID{Bytes: source, Valid: sourceErr == nil},
-		FinancialAccountID: pgtype.UUID{Bytes: account, Valid: accountErr == nil},
-		PeriodStart:        pgtype.Date{Time: start, Valid: validStart},
-		PeriodEnd:          pgtype.Date{Time: end, Valid: validEnd},
-	}, issues
+		SourceID:    pgtype.UUID{Bytes: source, Valid: sourceErr == nil},
+		PeriodStart: pgtype.Date{Time: start, Valid: validStart},
+		PeriodEnd:   pgtype.Date{Time: end, Valid: validEnd},
+	}, pgtype.UUID{Bytes: account, Valid: accountErr == nil}, issues
 }
 
 func importProblem(code, detail string, issues ...httpapi.Issue) *httpapi.Problem {
@@ -262,4 +313,8 @@ func previewNotFound() *httpapi.Problem {
 func previewUnavailable(ctx context.Context, err error) error {
 	slog.ErrorContext(ctx, "Could not process import preview", "error", err)
 	return huma.Error500InternalServerError("The import preview is temporarily unavailable.")
+}
+
+func importAlreadyResolved() *httpapi.Problem {
+	return httpapi.NewProblem(http.StatusConflict, "import_already_resolved", "The import has already been resolved.")
 }

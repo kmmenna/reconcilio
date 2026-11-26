@@ -18,9 +18,10 @@ type Problem struct {
 
 // Issue identifies a failed input field and, for CSV data, its physical line.
 type Issue struct {
-	Line   int    `json:"line,omitempty" minimum:"1"`
+	Line   int    `json:"line,omitzero" minimum:"1"`
 	Field  string `json:"field"`
 	Reason string `json:"reason"`
+	Value  string `json:"value,omitempty"`
 }
 
 func NewProblem(status int, code, detail string) *Problem {

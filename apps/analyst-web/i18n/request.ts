@@ -2,6 +2,8 @@ import Negotiator from "negotiator";
 import { headers } from "next/headers";
 import { getRequestConfig } from "next-intl/server";
 
+import catalogEn from "@/messages/catalog.en.json";
+import catalogPtBR from "@/messages/catalog.pt-BR.json";
 import en from "@/messages/en.json";
 import importsEn from "@/messages/imports.en.json";
 import importsPtBR from "@/messages/imports.pt-BR.json";
@@ -15,9 +17,9 @@ import { type Locale } from "./locales";
 import { readLanguagePreference } from "./preference";
 
 const messages = {
-  en: { ...en, Imports: importsEn, Reconciliation: reconciliationEn, Review: reviewEn },
-  "pt-BR": { ...ptBR, Imports: importsPtBR, Reconciliation: reconciliationPtBR, Review: reviewPtBR },
-} satisfies Record<Locale, typeof en & { Imports: typeof importsEn; Reconciliation: typeof reconciliationEn; Review: typeof reviewEn }>;
+  en: { ...en, Catalog: catalogEn, Imports: importsEn, Reconciliation: reconciliationEn, Review: reviewEn },
+  "pt-BR": { ...ptBR, Catalog: catalogPtBR, Imports: importsPtBR, Reconciliation: reconciliationPtBR, Review: reviewPtBR },
+} satisfies Record<Locale, typeof en & { Catalog: typeof catalogEn; Imports: typeof importsEn; Reconciliation: typeof reconciliationEn; Review: typeof reviewEn }>;
 
 async function detectBrowserLocale(): Promise<Locale> {
   const acceptLanguage = (await headers()).get("accept-language") ?? "";

@@ -38,12 +38,15 @@ var csvColumns = [...]string{
 	descriptionColumn:      "description",
 }
 
+const financialAccountColumn = "financial_account"
+
 type rowFields struct {
-	Line             int    `json:"line"`
-	SourceReference  string `json:"source_reference,omitempty"`
-	PaymentReference string `json:"payment_reference,omitempty"`
-	TransactionDate  string `json:"transaction_date" format:"date"`
-	Description      string `json:"description"`
+	FinancialAccountID string `json:"financial_account_id,omitempty" format:"uuid"`
+	Line               int    `json:"line"`
+	SourceReference    string `json:"source_reference,omitempty"`
+	PaymentReference   string `json:"payment_reference,omitempty"`
+	TransactionDate    string `json:"transaction_date" format:"date"`
+	Description        string `json:"description"`
 }
 
 type stagedRow struct {
@@ -58,7 +61,7 @@ func parseDate(value string) (time.Time, bool) {
 	return date, err == nil && len(value) == len(time.DateOnly) && date.Year() > 0
 }
 
-func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) {
+func parseCSV(data []byte, start, end time.Time, accountsByCode map[string]string) ([]stagedRow, []httpapi.Issue) {
 	issue := func(line int, field, reason string) httpapi.Issue {
 		return httpapi.Issue{Line: line, Field: field, Reason: reason}
 	}
@@ -67,9 +70,9 @@ func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) 
 	}
 
 	reader := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))))
-	reader.FieldsPerRecord = len(csvColumns)
+	mixed := accountsByCode != nil
 	header, err := reader.Read()
-	if err != nil {
+	if err != nil || len(header) != len(csvColumns) && (!mixed || len(header) != len(csvColumns)+1) {
 		return nil, []httpapi.Issue{issue(1, "header", "invalid_header")}
 	}
 	headerLine, _ := reader.FieldPos(0)
@@ -79,6 +82,11 @@ func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) 
 		if columns[i] < 0 {
 			return nil, []httpapi.Issue{issue(headerLine, "header", "invalid_header")}
 		}
+	}
+
+	accountColumn := slices.Index(header, financialAccountColumn)
+	if len(header) > len(csvColumns) && accountColumn < 0 {
+		return nil, []httpapi.Issue{issue(headerLine, "header", "invalid_header")}
 	}
 
 	var rows []stagedRow
@@ -115,7 +123,9 @@ func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) 
 		switch {
 		case !validDate:
 			issues = append(issues, issue(line, "transaction_date", "invalid_date"))
-		case date.Before(start) || date.After(end):
+		// Mixed uploads resolve their account set before exact-file replay is checked.
+		// Apply their period validation after that check.
+		case !mixed && (date.Before(start) || date.After(end)):
 			issues = append(issues, issue(line, "transaction_date", "outside_period"))
 		}
 
@@ -133,17 +143,34 @@ func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) 
 			}
 		}
 
+		var accountID string
+		if mixed {
+			var code string
+			if accountColumn >= 0 {
+				code = strings.TrimSpace(record[accountColumn])
+			}
+			accountID = accountsByCode[code]
+			switch {
+			case code == "":
+				issues = append(issues, issue(line, financialAccountColumn, "missing_financial_account"))
+			case accountID == "":
+				issues = append(issues, httpapi.Issue{
+					Line: line, Field: financialAccountColumn, Reason: "unknown_financial_account", Value: code,
+				})
+			}
+		}
 		if len(issues) >= maxRowIssues {
 			break
 		}
 		if len(issues) == before {
 			rows = append(rows, stagedRow{
 				rowFields: rowFields{
-					Line:             line,
-					SourceReference:  strings.TrimSpace(record[columns[sourceReferenceColumn]]),
-					PaymentReference: strings.TrimSpace(record[columns[paymentReferenceColumn]]),
-					TransactionDate:  dateValue,
-					Description:      record[columns[descriptionColumn]],
+					Line:               line,
+					FinancialAccountID: accountID,
+					SourceReference:    strings.TrimSpace(record[columns[sourceReferenceColumn]]),
+					PaymentReference:   strings.TrimSpace(record[columns[paymentReferenceColumn]]),
+					TransactionDate:    dateValue,
+					Description:        record[columns[descriptionColumn]],
 				},
 				MinorUnits:  minorUnits,
 				Currency:    currency,
@@ -191,4 +218,25 @@ func decimalDigits(s string) bool {
 
 func (r stagedRow) decimalAmount() string {
 	return money.Decimal(r.MinorUnits, r.MinorDigits)
+}
+
+func coverageDateIssues(rows []stagedRow, start, end time.Time) []httpapi.Issue {
+	var issues []httpapi.Issue
+	for _, row := range rows {
+		date, valid := parseDate(row.TransactionDate)
+		reason := ""
+		switch {
+		case !valid:
+			reason = "invalid_date"
+		case date.Before(start) || date.After(end):
+			reason = "outside_period"
+		}
+		if reason != "" {
+			issues = append(issues, httpapi.Issue{Line: row.Line, Field: "transaction_date", Reason: reason})
+			if len(issues) >= maxRowIssues {
+				break
+			}
+		}
+	}
+	return issues
 }

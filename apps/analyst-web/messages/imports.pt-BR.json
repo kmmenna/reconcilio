@@ -1,6 +1,6 @@
 {
   "title": "Importar CSV",
-  "intro": "Selecione a fonte, a conta financeira e as datas que o arquivo abrange.",
+  "intro": "Selecione a fonte, a atribuição das contas e o período coberto pelo CSV.",
   "workspace": "Área de trabalho",
   "dateFormat": "DD/MM/AAAA",
   "chooseSource": "Selecione uma fonte",
@@ -59,7 +59,8 @@
     "currency": "Moeda",
     "description": "Descrição",
     "source_reference": "Referência da fonte",
-    "payment_reference": "Referência do pagamento"
+    "payment_reference": "Referência do pagamento",
+    "financial_account": "Conta financeira"
   },
   "sides": {
     "internal": "Interno",
@@ -81,7 +82,8 @@
     "cancellation_unavailable": "Não foi possível cancelar a importação. Tente novamente.",
     "import_conflicts_changed": "Os conflitos mudaram desde a prévia. Revise os valores atualizados antes de confirmar.",
     "import_conflicts_require_review": "Revise os conflitos abaixo antes de confirmar.",
-    "import_coverage_overlap": "As datas se sobrepõem às de uma importação anterior, e pelo menos um dos arquivos tem linhas sem referência da fonte."
+    "import_coverage_overlap": "As datas se sobrepõem às de uma importação anterior, e pelo menos um dos arquivos tem linhas sem referência da fonte.",
+    "refresh_unavailable": "Não foi possível gerar uma nova prévia. Tente novamente."
   },
   "reasons": {
     "invalid_source": "Selecione uma fonte.",
@@ -93,9 +95,9 @@
     "invalid_period": "Informe uma data final igual ou posterior à data inicial.",
     "missing_file": "Escolha um arquivo CSV.",
     "invalid_encoding": "Salve o arquivo como texto em UTF-8.",
-    "invalid_header": "Use os seis nomes de coluna indicados no guia de formato do CSV.",
+    "invalid_header": "Use os nomes de coluna indicados no guia de formato do CSV.",
     "invalid_record": "Confira se faltam aspas de abertura ou fechamento.",
-    "invalid_column_count": "Preencha seis campos nesta linha.",
+    "invalid_column_count": "Use o mesmo número de campos do cabeçalho nesta linha.",
     "no_rows": "Adicione pelo menos uma linha de dados após o cabeçalho.",
     "too_many_rows": "Divida a exportação em arquivos CSV com até 10.000 linhas cada.",
     "outside_period": "Use uma data dentro do período selecionado.",
@@ -104,6 +106,16 @@
     "invalid_precision": "Esse valor tem casas decimais demais para a moeda informada.",
     "amount_out_of_range": "Esse valor excede o intervalo aceito.",
     "unknown": "Confira este campo.",
-    "conflicting_source_reference": "Esta referência da fonte aparece em linhas com valores diferentes."
-  }
+    "conflicting_source_reference": "Esta referência da fonte aparece em linhas com valores diferentes.",
+    "missing_financial_account": "Informe um código de conta financeira cadastrado.",
+    "unknown_financial_account_code": "O código {code} não está cadastrado."
+  },
+  "manageCatalog": "Gerenciar catálogo",
+  "useCSVAccountCodes": "Usar os códigos de conta do CSV",
+  "mixedHelp": "Preencha a coluna financial_account de cada linha com um código cadastrado no catálogo.",
+  "multipleAccounts": "Contas financeiras",
+  "refreshPreview": "Gerar nova prévia",
+  "refreshingPreview": "Gerando nova prévia…",
+  "previousSide": "Lado na prévia",
+  "currentSide": "Lado atual"
 }
