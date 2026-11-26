@@ -11,27 +11,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countAutomaticReconciliations = `-- name: CountAutomaticReconciliations :one
-SELECT count(*) FROM reconciliations
-WHERE job_id = $1 AND method = 'automatic'
+const acquireAccountLease = `-- name: AcquireAccountLease :execrows
+INSERT INTO reconciliation_account_leases (financial_account_id, attempt_token, expires_at)
+SELECT $1::uuid, $2::uuid,
+       clock_timestamp() + $3::interval
+WHERE NOT EXISTS (
+    SELECT 1 FROM reconciliation_account_leases AS active
+    WHERE active.financial_account_id = $1
+      AND active.expires_at > clock_timestamp()
+)
+ON CONFLICT (financial_account_id) DO UPDATE
+SET attempt_token = EXCLUDED.attempt_token,
+    expires_at = clock_timestamp() + $3::interval
+WHERE reconciliation_account_leases.expires_at <= clock_timestamp()
 `
 
-func (q *Queries) CountAutomaticReconciliations(ctx context.Context, jobID pgtype.Int8) (int64, error) {
-	row := q.db.QueryRow(ctx, countAutomaticReconciliations, jobID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+type AcquireAccountLeaseParams struct {
+	FinancialAccountID pgtype.UUID
+	AttemptToken       pgtype.UUID
+	LeaseDuration      pgtype.Interval
 }
 
-const countMatchProposals = `-- name: CountMatchProposals :one
-SELECT count(*) FROM match_proposals WHERE job_id = $1
+func (q *Queries) AcquireAccountLease(ctx context.Context, arg AcquireAccountLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, acquireAccountLease, arg.FinancialAccountID, arg.AttemptToken, arg.LeaseDuration)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const checkReprocessingAccount = `-- name: CheckReprocessingAccount :one
+SELECT id FROM financial_accounts
+WHERE id = $1
+FOR KEY SHARE
 `
 
-func (q *Queries) CountMatchProposals(ctx context.Context, jobID int64) (int64, error) {
-	row := q.db.QueryRow(ctx, countMatchProposals, jobID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+func (q *Queries) CheckReprocessingAccount(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, checkReprocessingAccount, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const createMatchProposal = `-- name: CreateMatchProposal :exec
@@ -95,6 +114,26 @@ func (q *Queries) GetAcceptedMatchProposalID(ctx context.Context, reconciliation
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const getJobSummary = `-- name: GetJobSummary :one
+SELECT job_id, financial_account_id, status, completed_at, attempt, max_attempts, automatic_count, proposal_count FROM reconciliation_job_summaries WHERE job_id = $1
+`
+
+func (q *Queries) GetJobSummary(ctx context.Context, jobID int64) (ReconciliationJobSummary, error) {
+	row := q.db.QueryRow(ctx, getJobSummary, jobID)
+	var i ReconciliationJobSummary
+	err := row.Scan(
+		&i.JobID,
+		&i.FinancialAccountID,
+		&i.Status,
+		&i.CompletedAt,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.AutomaticCount,
+		&i.ProposalCount,
+	)
+	return i, err
 }
 
 const getMatchProposalRecord = `-- name: GetMatchProposalRecord :one
@@ -626,6 +665,54 @@ func (q *Queries) ListReviewQueue(ctx context.Context) ([]ListReviewQueueRow, er
 	return items, nil
 }
 
+const releaseAccountLease = `-- name: ReleaseAccountLease :exec
+DELETE FROM reconciliation_account_leases
+WHERE financial_account_id = $1 AND attempt_token = $2
+`
+
+type ReleaseAccountLeaseParams struct {
+	FinancialAccountID pgtype.UUID
+	AttemptToken       pgtype.UUID
+}
+
+func (q *Queries) ReleaseAccountLease(ctx context.Context, arg ReleaseAccountLeaseParams) error {
+	_, err := q.db.Exec(ctx, releaseAccountLease, arg.FinancialAccountID, arg.AttemptToken)
+	return err
+}
+
+const renewAccountLease = `-- name: RenewAccountLease :one
+WITH available AS (
+    SELECT financial_account_id
+    FROM reconciliation_account_leases
+    WHERE financial_account_id = $1 AND attempt_token = $2 AND expires_at > clock_timestamp()
+    FOR UPDATE SKIP LOCKED
+), renewed AS (
+    UPDATE reconciliation_account_leases AS lease
+    SET expires_at = clock_timestamp() + $3::interval
+    FROM available
+    WHERE lease.financial_account_id = available.financial_account_id
+    RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM renewed) OR EXISTS (
+    SELECT 1 FROM reconciliation_account_leases AS current_lease
+    WHERE current_lease.financial_account_id = $1
+      AND current_lease.attempt_token = $2 AND current_lease.expires_at > clock_timestamp()
+) AS owned
+`
+
+type RenewAccountLeaseParams struct {
+	FinancialAccountID pgtype.UUID
+	AttemptToken       pgtype.UUID
+	LeaseDuration      pgtype.Interval
+}
+
+func (q *Queries) RenewAccountLease(ctx context.Context, arg RenewAccountLeaseParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, renewAccountLease, arg.FinancialAccountID, arg.AttemptToken, arg.LeaseDuration)
+	var owned pgtype.Bool
+	err := row.Scan(&owned)
+	return owned, err
+}
+
 const resolveMatchProposal = `-- name: ResolveMatchProposal :one
 UPDATE match_proposals
 SET status = $1,
@@ -667,4 +754,55 @@ func (q *Queries) ResolveMatchProposal(ctx context.Context, arg ResolveMatchProp
 		&i.ReconciliationID,
 	)
 	return i, err
+}
+
+const saveJobSummary = `-- name: SaveJobSummary :exec
+INSERT INTO reconciliation_job_summaries (
+    job_id, financial_account_id, status, completed_at, attempt, max_attempts, automatic_count, proposal_count
+) VALUES (
+    $1::bigint, $2::uuid,
+    $3, $4, $5, $6,
+    (SELECT count(*) FROM reconciliations WHERE job_id = $1 AND method = 'automatic'),
+    (SELECT count(*) FROM match_proposals WHERE job_id = $1)
+)
+ON CONFLICT (job_id) DO NOTHING
+`
+
+type SaveJobSummaryParams struct {
+	JobID              int64
+	FinancialAccountID pgtype.UUID
+	Status             string
+	CompletedAt        pgtype.Timestamptz
+	Attempt            int32
+	MaxAttempts        int32
+}
+
+func (q *Queries) SaveJobSummary(ctx context.Context, arg SaveJobSummaryParams) error {
+	_, err := q.db.Exec(ctx, saveJobSummary,
+		arg.JobID,
+		arg.FinancialAccountID,
+		arg.Status,
+		arg.CompletedAt,
+		arg.Attempt,
+		arg.MaxAttempts,
+	)
+	return err
+}
+
+const verifyAccountLease = `-- name: VerifyAccountLease :one
+SELECT financial_account_id FROM reconciliation_account_leases
+WHERE financial_account_id = $1 AND attempt_token = $2 AND expires_at > clock_timestamp()
+FOR UPDATE
+`
+
+type VerifyAccountLeaseParams struct {
+	FinancialAccountID pgtype.UUID
+	AttemptToken       pgtype.UUID
+}
+
+func (q *Queries) VerifyAccountLease(ctx context.Context, arg VerifyAccountLeaseParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, verifyAccountLease, arg.FinancialAccountID, arg.AttemptToken)
+	var financial_account_id pgtype.UUID
+	err := row.Scan(&financial_account_id)
+	return financial_account_id, err
 }

@@ -21,6 +21,7 @@ export function JobProgress({ initialJob }: { initialJob: ReconciliationJob }) {
   const [problem, setProblem] = useState<"pollUnavailable" | "notFound" | null>(null);
   const { id, status } = job;
   const finished = isFinal(status);
+  const hasPartialResults = status === "failed" && ((job.automatic_count ?? 0) > 0 || (job.proposal_count ?? 0) > 0);
 
   useEffect(() => {
     if (finished) return;
@@ -74,8 +75,12 @@ export function JobProgress({ initialJob }: { initialJob: ReconciliationJob }) {
             </dd>
           </dl>
         )}
-        {job.automatic_count !== undefined && (
-          <p className="mt-3 text-sm text-muted-foreground">{t("jobs.result", { count: job.automatic_count })}</p>
+        {hasPartialResults && <p className="mt-4 font-medium">{t("jobs.partialResults")}</p>}
+        {job.automatic_count !== undefined && job.proposal_count !== undefined && (
+          <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
+            <li>{t("jobs.result", { count: job.automatic_count })}</li>
+            <li>{t("jobs.proposals", { count: job.proposal_count })}</li>
+          </ul>
         )}
       </div>
       {problem && <p className="mt-3 text-sm text-destructive" role="alert">{t(`jobs.${problem}`)}</p>}

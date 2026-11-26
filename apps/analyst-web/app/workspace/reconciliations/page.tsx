@@ -1,14 +1,12 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { FinancialAccount } from "@/lib/imports";
 import type { Reconciliation } from "@/lib/reconciliation";
 import { formatMoney, formatTimestamp } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
 import { readWorkspaceResource } from "@/lib/workspace-api";
+import { AccountFilter } from "./account-filter";
 
 type Props = { searchParams: Promise<{ financial_account_id?: string | string[] }> };
 
@@ -24,26 +22,12 @@ export default async function ReconciliationsPage({ searchParams }: Props) {
     getLocale(),
   ]);
 
+  const selectedAccount = accounts?.find(({ id }) => id === account)?.id ?? "";
+
   return (
     <main className="workspace">
       <h1 className="page-title">{t("title")}</h1>
-      {accounts && (
-        <form action="/workspace/reconciliations" className="mt-7 flex flex-wrap items-end gap-3" method="get">
-          <div className="min-w-0 space-y-2">
-            <Label htmlFor="reconciliation-account">{t("filter")}</Label>
-            <NativeSelect
-              id="reconciliation-account"
-              name="financial_account_id"
-              className="h-11 max-w-[min(21rem,calc(100vw-2.6rem))] bg-card shadow-none"
-              defaultValue={accounts.some(({ id }) => id === account) ? account : ""}
-            >
-              <NativeSelectOption value="">{t("allAccounts")}</NativeSelectOption>
-              {accounts.map(({ id, name }) => <NativeSelectOption key={id} value={id}>{name}</NativeSelectOption>)}
-            </NativeSelect>
-          </div>
-          <Button type="submit" variant="outline" className="h-11">{t("applyFilter")}</Button>
-        </form>
-      )}
+      {accounts && <AccountFilter key={selectedAccount} accounts={accounts} initialAccount={selectedAccount} />}
       {!results || !accounts ? (
         <p className="mt-6 text-destructive" role="alert">{t("unavailable")}</p>
       ) : results.length === 0 ? (

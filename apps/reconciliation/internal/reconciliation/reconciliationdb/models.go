@@ -39,6 +39,17 @@ type Reconciliation struct {
 	JobID              pgtype.Int8
 }
 
+type ReconciliationJobSummary struct {
+	JobID              int64
+	FinancialAccountID pgtype.UUID
+	Status             string
+	CompletedAt        pgtype.Timestamptz
+	Attempt            int32
+	MaxAttempts        int32
+	AutomaticCount     int64
+	ProposalCount      int64
+}
+
 type Transaction struct {
 	ID                 pgtype.UUID
 	ImportID           pgtype.UUID

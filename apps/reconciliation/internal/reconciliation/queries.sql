@@ -37,10 +37,6 @@ INSERT INTO reconciliation_members (reconciliation_id, transaction_id, side)
 VALUES (sqlc.arg(reconciliation_id), sqlc.arg(internal_id), 'internal'),
        (sqlc.arg(reconciliation_id), sqlc.arg(external_id), 'external');
 
--- name: CountAutomaticReconciliations :one
-SELECT count(*) FROM reconciliations
-WHERE job_id = $1 AND method = 'automatic';
-
 -- name: ListReconciliations :many
 SELECT r.id, r.confirmed_at, r.method, sqlc.embed(financial_accounts),
        t.amount_minor, t.currency, t.minor_digits
@@ -112,9 +108,6 @@ INSERT INTO match_proposals (financial_account_id, internal_transaction_id, exte
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (internal_transaction_id, external_transaction_id) WHERE status = 'pending' DO NOTHING;
 
--- name: CountMatchProposals :one
-SELECT count(*) FROM match_proposals WHERE job_id = $1;
-
 -- name: ListReviewQueue :many
 SELECT sqlc.embed(transactions), sqlc.embed(financial_accounts), sources.name AS source_name, groups.pending_count
 FROM (
@@ -175,3 +168,64 @@ WHERE reconciliations.id = sqlc.arg(reconciliation_id)
   AND match_proposals.status = 'pending'
   AND (match_proposals.internal_transaction_id = sqlc.arg(internal_id)
        OR match_proposals.external_transaction_id = sqlc.arg(external_id));
+
+-- name: CheckReprocessingAccount :one
+SELECT id FROM financial_accounts
+WHERE id = $1
+FOR KEY SHARE;
+
+-- name: AcquireAccountLease :execrows
+INSERT INTO reconciliation_account_leases (financial_account_id, attempt_token, expires_at)
+SELECT sqlc.arg(financial_account_id)::uuid, sqlc.arg(attempt_token)::uuid,
+       clock_timestamp() + sqlc.arg(lease_duration)::interval
+WHERE NOT EXISTS (
+    SELECT 1 FROM reconciliation_account_leases AS active
+    WHERE active.financial_account_id = sqlc.arg(financial_account_id)
+      AND active.expires_at > clock_timestamp()
+)
+ON CONFLICT (financial_account_id) DO UPDATE
+SET attempt_token = EXCLUDED.attempt_token,
+    expires_at = clock_timestamp() + sqlc.arg(lease_duration)::interval
+WHERE reconciliation_account_leases.expires_at <= clock_timestamp();
+
+-- name: RenewAccountLease :one
+WITH available AS (
+    SELECT financial_account_id
+    FROM reconciliation_account_leases
+    WHERE financial_account_id = $1 AND attempt_token = $2 AND expires_at > clock_timestamp()
+    FOR UPDATE SKIP LOCKED
+), renewed AS (
+    UPDATE reconciliation_account_leases AS lease
+    SET expires_at = clock_timestamp() + sqlc.arg(lease_duration)::interval
+    FROM available
+    WHERE lease.financial_account_id = available.financial_account_id
+    RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM renewed) OR EXISTS (
+    SELECT 1 FROM reconciliation_account_leases AS current_lease
+    WHERE current_lease.financial_account_id = $1
+      AND current_lease.attempt_token = $2 AND current_lease.expires_at > clock_timestamp()
+) AS owned;
+
+-- name: ReleaseAccountLease :exec
+DELETE FROM reconciliation_account_leases
+WHERE financial_account_id = $1 AND attempt_token = $2;
+
+-- name: VerifyAccountLease :one
+SELECT financial_account_id FROM reconciliation_account_leases
+WHERE financial_account_id = $1 AND attempt_token = $2 AND expires_at > clock_timestamp()
+FOR UPDATE;
+
+-- name: GetJobSummary :one
+SELECT * FROM reconciliation_job_summaries WHERE job_id = $1;
+
+-- name: SaveJobSummary :exec
+INSERT INTO reconciliation_job_summaries (
+    job_id, financial_account_id, status, completed_at, attempt, max_attempts, automatic_count, proposal_count
+) VALUES (
+    sqlc.arg(job_id)::bigint, sqlc.arg(financial_account_id)::uuid,
+    sqlc.arg(status), sqlc.arg(completed_at), sqlc.arg(attempt), sqlc.arg(max_attempts),
+    (SELECT count(*) FROM reconciliations WHERE job_id = sqlc.arg(job_id) AND method = 'automatic'),
+    (SELECT count(*) FROM match_proposals WHERE job_id = sqlc.arg(job_id))
+)
+ON CONFLICT (job_id) DO NOTHING;

@@ -32,12 +32,19 @@ type MatchEvidence struct {
 	Currency               string `json:"currency"`
 }
 
-// ProcessAccount confirms current automatic matches and publishes proposals under the account lock.
-func (s *Service) ProcessAccount(ctx context.Context, accountID pgtype.UUID, jobID int64) error {
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := catalog.LockFinancialAccounts(ctx, tx, []pgtype.UUID{accountID}); err != nil {
-			return err
-		}
+// ProcessAccount evaluates open Transactions and commits each matching phase independently.
+func (s *Service) ProcessAccount(ctx context.Context, attempt *AccountAttempt) error {
+	if err := s.confirmAutomaticMatches(ctx, attempt); err != nil {
+		return err
+	}
+	return attempt.write(ctx, func(tx pgx.Tx) error {
+		return publishMatchProposals(ctx, s.queries.WithTx(tx), attempt.accountID, attempt.jobID)
+	})
+}
+
+func (s *Service) confirmAutomaticMatches(ctx context.Context, attempt *AccountAttempt) error {
+	accountID, jobID := attempt.accountID, attempt.jobID
+	return attempt.write(ctx, func(tx pgx.Tx) error {
 		queries := s.queries.WithTx(tx)
 		// Count all account references before excluding Transactions that already have a member.
 		pairs, err := queries.ListAutomaticPairs(ctx, accountID)
@@ -64,7 +71,7 @@ func (s *Service) ProcessAccount(ctx context.Context, accountID pgtype.UUID, job
 				return err
 			}
 		}
-		return publishMatchProposals(ctx, queries, accountID, jobID)
+		return nil
 	})
 }
 

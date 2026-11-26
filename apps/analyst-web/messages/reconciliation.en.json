@@ -3,6 +3,12 @@
   "filter": "Financial Account",
   "allAccounts": "All Financial Accounts",
   "applyFilter": "Apply filter",
+  "reprocess": {
+    "action": "Reprocess account",
+    "queueing": "Queuing reprocessing…",
+    "unavailable": "Reprocessing could not be queued. Try again.",
+    "notFound": "The Financial Account could not be found. Refresh the page to update the list."
+  },
   "amount": "Amount",
   "completedAt": "Confirmed at",
   "method": "Decision method",
@@ -25,11 +31,14 @@
     "completedAt": "Completed at",
     "attempt": "Attempt {attempt, number} of {max, number}",
     "result": "{count, plural, =0 {No automatic Reconciliations} one {# automatic Reconciliation} other {# automatic Reconciliations}}",
+    "proposals": "{count, plural, =0 {No new Match Proposals} one {# new Match Proposal} other {# new Match Proposals}}",
+    "partialResults": "Results saved before processing failed",
     "notFound": "The processing job could not be found.",
     "unavailable": "The job status is temporarily unavailable. Refresh the page to try again.",
     "pollUnavailable": "The latest job status is unavailable. Retrying…",
     "status": {
       "queued": "Queued",
+      "deferred": "Waiting for the account to become available",
       "running": "Processing",
       "retrying": "Waiting to retry",
       "completed": "Completed",
