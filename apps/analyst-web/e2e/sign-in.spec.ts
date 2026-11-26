@@ -36,6 +36,8 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
   const account = header.getByRole("button", { name: "Administrator admin", exact: true });
   await expect(account.getByText("Administrator", { exact: true })).toBeVisible();
   await expect(account.getByText("admin", { exact: true })).toBeVisible();
+  await expect(account).toHaveCSS("border-top-width", "0px");
+  await expect(account).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   const main = page.getByRole("main");
   await expect(main.getByText("Administrator", { exact: true })).toHaveCount(0);
   await expect(main.getByText("admin", { exact: true })).toHaveCount(0);
@@ -113,7 +115,11 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
 
   const profileAction = page.getByRole("menuitem", { name: "My profile" });
   await expect(account).toHaveAttribute("aria-expanded", "false");
-  await account.press("Enter");
+  await header.getByRole("link", { name: "Create user", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(account).toBeFocused();
+  await expect(account).toHaveCSS("outline-style", "solid");
+  await page.keyboard.press("Enter");
   await expect(account).toHaveAttribute("aria-expanded", "true");
   await expect(profileAction).toBeFocused();
   await page.keyboard.press("ArrowDown");
