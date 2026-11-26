@@ -35,7 +35,6 @@ export default async function ImportPage() {
   return (
     <main className="workspace">
       <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-primary underline-offset-4">
-        <Link href="/workspace" className="hover:underline">{t("workspace")}</Link>
         <Link href="/workspace/catalog" className="hover:underline">{t("manageCatalog")}</Link>
       </div>
       <h1 className="page-title">{t("title")}</h1>
