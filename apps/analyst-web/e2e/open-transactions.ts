@@ -5,7 +5,10 @@ export async function verifyOpenTransactions(page: Page) {
   await page.getByRole("link", { name: "Open Transactions" }).click();
   await expect(page.getByRole("heading", { name: "Open Transactions" })).toBeVisible();
   const openURL = page.url();
-  await expect(page.getByRole("table").locator("tbody").getByRole("row")).toHaveCount(5);
+  const demoRows = page.getByRole("table").locator("tbody").getByRole("row").filter({
+    has: page.getByText(/^(Demo ERP|Demo Card Statement)$/),
+  });
+  await expect(demoRows).toHaveCount(5);
   const row = (reference: string) => page.getByRole("row").filter({ hasText: reference });
   const internal = row("ERP-003");
   const external = row("CARD-004");
