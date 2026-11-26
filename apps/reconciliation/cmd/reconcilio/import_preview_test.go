@@ -73,13 +73,14 @@ type previewResponse struct {
 	PeriodStart string `json:"period_start"`
 	PeriodEnd   string `json:"period_end"`
 	Rows        []struct {
-		Line             int    `json:"line"`
-		SourceReference  string `json:"source_reference"`
-		PaymentReference string `json:"payment_reference"`
-		TransactionDate  string `json:"transaction_date"`
-		Amount           string `json:"amount"`
-		Currency         string `json:"currency"`
-		Description      string `json:"description"`
+		FinancialAccountID string `json:"financial_account_id"`
+		Line               int    `json:"line"`
+		SourceReference    string `json:"source_reference"`
+		PaymentReference   string `json:"payment_reference"`
+		TransactionDate    string `json:"transaction_date"`
+		Amount             string `json:"amount"`
+		Currency           string `json:"currency"`
+		Description        string `json:"description"`
 	} `json:"rows"`
 }
 
@@ -590,8 +591,26 @@ func TestCSVImportPreview(t *testing.T) {
 		refStaged := stage(october5, october10, csvHeader+"OCT-001,,2026-10-05,1,BRL,Has a Reference\n")
 		var original previewResponse
 		first := confirm(stage(october1, october5, referenceFree), http.StatusOK, &original)
+		if original.TransactionCount == nil || *original.TransactionCount != 1 {
+			t.Fatalf("original import did not confirm one transaction: %+v", original)
+		}
+		// With the worker stopped, new transactions appear as open and new jobs stay in River.
+		const openTransactions = "/api/transactions?status=open"
+		before := request(http.MethodGet, openTransactions, session.Token, "", nil)
+		if before.Code != http.StatusOK {
+			t.Fatalf("could not list open transactions before replay: status=%d %s", before.Code, before.Body)
+		}
+		countJobs := func() int64 {
+			t.Helper()
+			var count int64
+			if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM river_job`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			return count
+		}
+		jobsBefore := countJobs()
 		for _, replay := range []*httptest.ResponseRecorder{
-			confirm(exactStaged, http.StatusOK, &original),
+			confirm(exactStaged, http.StatusOK, new(previewResponse)),
 			request(http.MethodGet, "/api/imports/"+exactStaged.ID, session.Token, "", nil),
 			upload(session.Token, sourceID, accountID, october1, october10, referenceFree),
 			upload(session.Token, sourceID, accountID, "", "", referenceFree),
@@ -599,6 +618,13 @@ func TestCSVImportPreview(t *testing.T) {
 			if replay.Code != http.StatusOK || replay.Body.String() != first.Body.String() {
 				t.Fatalf("exact reference-free replay was not recognized: status=%d %s", replay.Code, replay.Body)
 			}
+		}
+		after := request(http.MethodGet, openTransactions, session.Token, "", nil)
+		if after.Code != http.StatusOK || !bytes.Equal(before.Body.Bytes(), after.Body.Bytes()) {
+			t.Fatalf("exact replay changed open transactions: status=%d %s", after.Code, after.Body)
+		}
+		if jobsAfter := countJobs(); jobsAfter != jobsBefore {
+			t.Fatalf("exact replay changed the job count from %d to %d", jobsBefore, jobsAfter)
 		}
 		var invalid httpapi.Problem
 		readResponse(t, upload(session.Token, sourceID, accountID, october5, october10, referenceFree), http.StatusUnprocessableEntity, &invalid)
@@ -904,6 +930,11 @@ func TestCSVImportPreview(t *testing.T) {
 		`, pending.ID); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := pool.Exec(t.Context(), `
+			UPDATE imports SET preview = preview #- '{rows,0,financial_account_id}' WHERE id = $1::text::uuid
+		`, pending.ID); err != nil {
+			t.Fatal(err)
+		}
 		path := "/api/imports/" + pending.ID
 		want := accountCoverageResponse{AccountID: accountID, PeriodStart: first, PeriodEnd: last, Basis: "declared"}
 		var refreshed previewResponse
@@ -911,7 +942,8 @@ func TestCSVImportPreview(t *testing.T) {
 		readResponse(t, request(http.MethodPost, path+"/refresh-preview", session.Token, "", nil), http.StatusCreated, &refreshed)
 		for _, preview := range []previewResponse{pending, refreshed} {
 			if preview.PeriodStart != first || preview.PeriodEnd != last ||
-				!slices.Equal(preview.AccountCoverage, []accountCoverageResponse{want}) {
+				!slices.Equal(preview.AccountCoverage, []accountCoverageResponse{want}) ||
+				len(preview.Rows) != 1 || preview.Rows[0].FinancialAccountID != accountID {
 				t.Fatalf("legacy preview did not retain the recorded coverage: %+v", preview)
 			}
 		}
@@ -942,6 +974,22 @@ func TestCSVImportPreview(t *testing.T) {
 		if replayed.Code != http.StatusOK || replayed.Body.String() != archived.Body.String() {
 			t.Fatalf("replay did not return the archived receipt: %d %s", replayed.Code, replayed.Body)
 		}
+	})
+
+	t.Run("rejects an unassigned Financial Account in retained rows", func(t *testing.T) {
+		const file = csvHeader + ",,2024-09-10,6,BRL,Preview with a retained row\n"
+		var pending previewResponse
+		readResponse(t, upload(session.Token, sourceID, accountID, "", "", file), http.StatusCreated, &pending)
+		if _, err := pool.Exec(t.Context(), `
+			UPDATE imports SET preview = jsonb_set(preview, '{rows,0,financial_account_id}', to_jsonb($2::text))
+			WHERE id = $1::text::uuid
+		`, pending.ID, uuid.New().String()); err != nil {
+			t.Fatal(err)
+		}
+		var problem httpapi.Problem
+		path := "/api/imports/" + pending.ID
+		readResponse(t, request(http.MethodPost, path+"/refresh-preview", session.Token, "", nil), http.StatusInternalServerError, &problem)
+		readResponse(t, request(http.MethodPost, path+"/confirm", session.Token, "", nil), http.StatusInternalServerError, &problem)
 	})
 
 	t.Run("returns a stable not-found problem for an unknown preview", func(t *testing.T) {

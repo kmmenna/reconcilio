@@ -138,6 +138,9 @@ func (s *Service) createPreview(ctx context.Context, userID pgtype.UUID, input p
 			return importView{}, err
 		}
 	}
+	if err := assignRowAccounts(rows, accounts); err != nil {
+		return importView{}, err
+	}
 	period = assignCoverage(accounts, rows, period)
 	params.PeriodStart, params.PeriodEnd = period.start, period.end
 	params.FileFingerprint = input.file.fingerprint[:]
@@ -228,7 +231,7 @@ func (s *Service) refreshPreview(ctx context.Context, id, analystID pgtype.UUID)
 		if err != nil {
 			return err
 		}
-		document, err := decodePreview(record.Preview)
+		document, err := decodePreview(record.Preview, accounts)
 		if err != nil {
 			return err
 		}
@@ -283,9 +286,7 @@ func stagePreview(ctx context.Context, queries *ingestiondb.Queries, params inge
 func assessImport(ctx context.Context, queries *ingestiondb.Queries, sourceID pgtype.UUID, accounts []importAccount, rows []stagedRow) ([]assessedAccount, []importConflict, error) {
 	grouped := make(map[string][]stagedRow, len(accounts))
 	for _, row := range rows {
-		// Pre-assignment previews only need the single account backfilled by the migration.
-		accountID := cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)
-		grouped[accountID] = append(grouped[accountID], row)
+		grouped[row.FinancialAccountID] = append(grouped[row.FinancialAccountID], row)
 	}
 	assessments := make([]assessedAccount, 0, len(accounts))
 	var conflicts []importConflict
@@ -330,7 +331,7 @@ func (s *Service) getPreview(ctx context.Context, id pgtype.UUID) (importView, e
 	if err != nil {
 		return importView{}, err
 	}
-	document, err := decodePreview(record.Preview)
+	document, err := decodePreview(record.Preview, accounts)
 	if err != nil {
 		return importView{}, err
 	}
@@ -421,10 +422,13 @@ func readReceipt(data []byte) (importView, error) {
 	return receipt, nil
 }
 
-func decodePreview(data []byte) (previewDocument, error) {
+func decodePreview(data []byte, accounts []importAccount) (previewDocument, error) {
 	var document previewDocument
 	if err := json.Unmarshal(data, &document); err != nil {
 		return previewDocument{}, fmt.Errorf("decode preview rows: %w", err)
+	}
+	if err := assignRowAccounts(document.Rows, accounts); err != nil {
+		return previewDocument{}, err
 	}
 	return document, nil
 }
@@ -455,7 +459,6 @@ func presentPreview(id pgtype.UUID, source catalog.Source, accounts []importAcco
 	view.Conflicts = document.Conflicts
 	view.Rows = make([]previewRow, 0, len(document.Rows))
 	for _, row := range document.Rows {
-		row.FinancialAccountID = cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)
 		view.Rows = append(view.Rows, previewRow{
 			rowFields: row.rowFields,
 			Amount:    row.decimalAmount(),

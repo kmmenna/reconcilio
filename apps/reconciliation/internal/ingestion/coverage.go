@@ -1,7 +1,6 @@
 package ingestion
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -47,7 +46,7 @@ func assignCoverage(accounts []importAccount, rows []stagedRow, declared coverag
 		// Validation has already checked every date and account assignment.
 		date, _ := parseDate(row.TransactionDate)
 		summary.include(date)
-		position := positions[cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)]
+		position := positions[row.FinancialAccountID]
 		accounts[position].coverage.include(date)
 	}
 	return summary

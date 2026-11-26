@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -111,6 +112,24 @@ func dateIssue(value string, period coveragePeriod) string {
 	return ""
 }
 
+func assignRowAccounts(rows []stagedRow, accounts []importAccount) error {
+	assigned := make(map[string]struct{}, len(accounts))
+	for _, account := range accounts {
+		assigned[account.entry.ID] = struct{}{}
+	}
+	for i := range rows {
+		row := &rows[i]
+		// Legacy previews and CSVs with a selected account can omit the row assignment.
+		if row.FinancialAccountID == "" && len(accounts) == 1 {
+			row.FinancialAccountID = accounts[0].entry.ID
+		}
+		if _, ok := assigned[row.FinancialAccountID]; !ok {
+			return fmt.Errorf("row %d refers to unassigned Financial Account %q", row.Line, row.FinancialAccountID)
+		}
+	}
+	return nil
+}
+
 func coverageDateIssues(rows []stagedRow, accounts []importAccount) []httpapi.Issue {
 	periods := make(map[string]coveragePeriod, len(accounts))
 	for _, account := range accounts {
@@ -118,7 +137,7 @@ func coverageDateIssues(rows []stagedRow, accounts []importAccount) []httpapi.Is
 	}
 	var issues []httpapi.Issue
 	for _, row := range rows {
-		period := periods[cmp.Or(row.FinancialAccountID, accounts[0].entry.ID)]
+		period := periods[row.FinancialAccountID]
 		if reason := dateIssue(row.TransactionDate, period); reason != "" {
 			issues = append(issues, rowIssue(row.Line, "transaction_date", reason))
 			if len(issues) >= maxRowIssues {

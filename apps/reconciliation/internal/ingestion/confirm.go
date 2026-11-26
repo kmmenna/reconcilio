@@ -48,7 +48,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 
 		source := catalog.Source{ID: record.SourceID.String(), Name: record.SourceName, Side: record.SourceSide}
 		receipt = newImportView(id, source, accounts, record.PeriodStart, record.PeriodEnd)
-		document, err := decodePreview(record.Preview)
+		document, err := decodePreview(record.Preview, accounts)
 		if err != nil {
 			return err
 		}
