@@ -49,6 +49,16 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
   const session = (await context.cookies()).find((cookie) => cookie.name === "reconcilio_session");
   expect(session).toMatchObject({ httpOnly: true, sameSite: "Lax" });
 
+  await test.step("redirect a signed-in user who opens the sign-in page", async () => {
+    const response = await context.request.get(`${origin}/login`, { maxRedirects: 0 });
+    expect(response.status()).toBe(307);
+    expect(new URL(response.headers().location, origin).pathname).toBe("/workspace");
+
+    await page.goto(`${origin}/login`);
+    await expect(page).toHaveURL(`${origin}/workspace/imports`);
+    await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
+  });
+
   await page.goto(`${origin}/workspace`);
   await expect(page).toHaveURL(`${origin}/workspace/imports`);
   await expect(page.getByRole("heading", { name: "Import CSV" })).toBeVisible();
@@ -175,5 +185,10 @@ test("the local administrator signs in, reloads the workspace, and signs out", a
 
   await context.addCookies([{ name: "reconcilio_session", value: "invalid-token", url: origin }]);
   await page.goto(`${origin}/workspace`);
+  await expect(page).toHaveURL(`${origin}/login`);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  const rejectedSession = await page.goto(`${origin}/login`);
+  expect(rejectedSession?.status()).toBe(200);
+  await expect(page).toHaveURL(`${origin}/login`);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });

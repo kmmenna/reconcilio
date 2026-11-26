@@ -1,10 +1,16 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { LanguageControl } from "@/components/language/language-control";
+import { readProfile, sessionCookie } from "@/lib/auth";
 
 import { SignInForm } from "./sign-in-form";
 
 export default async function LoginPage() {
+  const token = (await cookies()).get(sessionCookie)?.value;
+  if (token && await readProfile(token).catch(() => null)) redirect("/workspace");
+
   const t = await getTranslations("SignIn");
 
   return (
