@@ -54,14 +54,14 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                 { field: "period_start", value: <time dateTime={preview.period_start}>{date(preview.period_start)}</time> },
                 { field: "period_end", value: <time dateTime={preview.period_end}>{date(preview.period_end)}</time> },
               ] as const).map(({ field, value }) => (
-                <div key={field} className="min-w-0">
+                <div key={field} className={`min-w-0 ${field === "financial_account_id" ? "col-span-2 desktop:col-span-1" : ""}`}>
                   <dt className="text-sm text-muted-foreground">{t(`fields.${field}`)}</dt>
                   <dd className="mt-1 font-semibold wrap-anywhere">{value}</dd>
                 </div>
               ))}
               <div className="col-span-full min-w-0 border-t border-border pt-3">
-                <dt className="inline text-sm text-muted-foreground">{t("previewId")}</dt>{" "}
-                <dd className="inline font-mono text-xs wrap-anywhere">{preview.id}</dd>
+                <dt className="text-sm text-muted-foreground desktop:inline">{t("previewId")}</dt>{" "}
+                <dd className="font-mono text-xs wrap-anywhere desktop:inline">{preview.id}</dd>
               </div>
             </dl>
           </div>
@@ -71,30 +71,44 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
               <h2 className="text-lg font-semibold" id="preview-rows">{t("transactions")}</h2>
               <p className="text-sm text-muted-foreground">{t("rowCount", { count: preview.rows.length })}</p>
             </div>
-            <div aria-labelledby="preview-rows" className="overflow-x-auto rounded-xl border border-border bg-card" role="region" tabIndex={0}>
-              <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
-                <thead className="bg-accent">
-                  <tr>
-                    {columns.map((column) => (
-                      <th className={`px-4 py-3 font-semibold ${column === "amount" ? "text-right" : ""}`} key={column} scope="col">
-                        {t(`fields.${column}`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.rows.map((row) => (
-                    <tr className="border-t border-border align-top" key={row.line}>
-                      <td className="px-4 py-3 whitespace-nowrap tabular-nums"><time dateTime={row.transaction_date}>{date(row.transaction_date)}</time></td>
-                      <td className="max-w-sm px-4 py-3 whitespace-pre-wrap wrap-anywhere">{row.description}</td>
-                      <td className="px-4 py-3 text-right font-medium whitespace-nowrap tabular-nums">{formatMoney(row.amount, row.currency, locale)}</td>
-                      <td className="max-w-40 px-4 py-3 text-muted-foreground wrap-anywhere">{row.source_reference || t("absentReference")}</td>
-                      <td className="max-w-40 px-4 py-3 text-muted-foreground wrap-anywhere">{row.payment_reference || t("absentReference")}</td>
-                    </tr>
+            <table aria-labelledby="preview-rows" className="block w-full rounded-xl border border-border bg-card text-left text-sm desktop:table" role="table">
+              <thead className="sr-only bg-accent desktop:not-sr-only" role="rowgroup">
+                <tr role="row">
+                  {columns.map((column) => (
+                    <th className={`px-4 py-3 font-semibold ${column === "amount" ? "text-right" : ""}`} key={column} role="columnheader" scope="col">
+                      {t(`fields.${column}`)}
+                    </th>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </tr>
+              </thead>
+              <tbody className="block desktop:table-row-group" role="rowgroup">
+                {preview.rows.map((row) => (
+                  <tr
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-t border-border px-4 py-3 first:border-t-0 desktop:table-row desktop:align-top desktop:first:border-t"
+                    key={row.line}
+                    role="row"
+                  >
+                    <td className="col-span-2 row-start-2 text-muted-foreground tabular-nums desktop:px-4 desktop:py-3 desktop:whitespace-nowrap desktop:text-foreground" role="cell">
+                      <time dateTime={row.transaction_date}>{date(row.transaction_date)}</time>
+                    </td>
+                    <td className="col-start-1 row-start-1 font-medium whitespace-pre-wrap wrap-anywhere desktop:max-w-sm desktop:px-4 desktop:py-3 desktop:font-normal" role="cell">
+                      {row.description}
+                    </td>
+                    <td className="col-start-2 row-start-1 text-right font-medium tabular-nums wrap-anywhere desktop:px-4 desktop:py-3 desktop:whitespace-nowrap" role="cell">
+                      {formatMoney(row.amount, row.currency, locale)}
+                    </td>
+                    <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
+                      <span className="mr-2 desktop:hidden">{t("fields.source_reference")}</span>
+                      {row.source_reference || t("absentReference")}
+                    </td>
+                    <td className="col-span-2 text-muted-foreground wrap-anywhere desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
+                      <span className="mr-2 desktop:hidden">{t("fields.payment_reference")}</span>
+                      {row.payment_reference || t("absentReference")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
         </>
       ) : (

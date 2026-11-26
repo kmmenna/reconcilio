@@ -4,10 +4,17 @@ const moneyFormats = new Map<string, Intl.NumberFormat>();
 const dateFormats = new Map<Locale, Intl.DateTimeFormat>();
 
 export function formatMoney(amount: string, currency: string, locale: Locale) {
-  const key = `${locale}:${currency}`;
+  const decimalPoint = amount.indexOf(".");
+  const fractionDigits = decimalPoint === -1 ? 0 : amount.length - decimalPoint - 1;
+  const key = `${locale}:${currency}:${fractionDigits}`;
   let format = moneyFormats.get(key);
   if (!format) {
-    format = new Intl.NumberFormat(locale, { style: "currency", currency });
+    format = new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    });
     moneyFormats.set(key, format);
   }
   // Intl accepts exact decimal strings without converting through a floating-point number.

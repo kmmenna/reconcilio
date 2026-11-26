@@ -212,12 +212,16 @@ func TestCSVImportPreview(t *testing.T) {
 	t.Run("preserves exact money and physical CSV positions", func(t *testing.T) {
 		exact := "\xef\xbb\xbf" + csvHeader +
 			"ERP-001,,2026-11-16,-92233720368547758.08,BRL,\"Line one\nline two\"\n" +
-			"ERP-002,,2026-11-17,+7.5,KWD,Three minor digits\n"
+			"ERP-002,,2026-11-17,+7.5,KWD,Three minor digits\n" +
+			"ERP-003,,2026-11-18,1.234,IQD,ISO minor digits\n" +
+			"ERP-004,,2026-11-19,5.05,XCG,Caribbean guilder\n"
 		var preview previewResponse
 		readResponse(t, upload(session.Token, sourceID, accountID, start, end, exact), http.StatusCreated, &preview)
-		if len(preview.Rows) != 2 || preview.Rows[0].Amount != "-92233720368547758.08" ||
+		if len(preview.Rows) != 4 || preview.Rows[0].Amount != "-92233720368547758.08" ||
 			preview.Rows[0].Description != "Line one\nline two" || preview.Rows[1].Line != 4 ||
-			preview.Rows[1].Amount != "7.500" || preview.Rows[1].Currency != "KWD" {
+			preview.Rows[1].Amount != "7.500" || preview.Rows[1].Currency != "KWD" ||
+			preview.Rows[2].Amount != "1.234" || preview.Rows[2].Currency != "IQD" ||
+			preview.Rows[3].Amount != "5.05" || preview.Rows[3].Currency != "XCG" {
 			t.Fatalf("unexpected exact money rows: %+v", preview.Rows)
 		}
 	})

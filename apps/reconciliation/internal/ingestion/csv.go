@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
-	"golang.org/x/text/currency"
 )
 
 const (
@@ -48,8 +47,9 @@ type rowFields struct {
 
 type stagedRow struct {
 	rowFields
-	MinorUnits int64  `json:"minor_units"`
-	Currency   string `json:"currency"`
+	MinorUnits  int64  `json:"minor_units"`
+	Currency    string `json:"currency"`
+	MinorDigits int    `json:"minor_digits"`
 }
 
 func parseDate(value string) (time.Time, bool) {
@@ -118,12 +118,13 @@ func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) 
 			issues = append(issues, issue(line, "transaction_date", "outside_period"))
 		}
 
-		unit, err := currency.ParseISO(record[columns[currencyColumn]])
+		currencyCode := record[columns[currencyColumn]]
+		currency := strings.ToUpper(currencyCode)
+		scale, recognized := currencyMinorDigits[currency]
 		var minorUnits int64
-		if err != nil || unit == (currency.Unit{}) {
+		if len(currencyCode) != 3 || !recognized {
 			issues = append(issues, issue(line, "currency", "invalid_currency"))
 		} else {
-			scale, _ := currency.Standard.Rounding(unit)
 			var reason string
 			minorUnits, reason = parseMinorUnits(record[columns[amountColumn]], scale)
 			if reason != "" {
@@ -143,8 +144,9 @@ func parseCSV(data []byte, start, end time.Time) ([]stagedRow, []httpapi.Issue) 
 					TransactionDate:  dateValue,
 					Description:      record[columns[descriptionColumn]],
 				},
-				MinorUnits: minorUnits,
-				Currency:   unit.String(),
+				MinorUnits:  minorUnits,
+				Currency:    currency,
+				MinorDigits: scale,
 			})
 		}
 	}
@@ -187,8 +189,7 @@ func decimalDigits(s string) bool {
 }
 
 func (r stagedRow) decimalAmount() string {
-	unit, _ := currency.ParseISO(r.Currency)
-	scale, _ := currency.Standard.Rounding(unit)
+	scale := r.MinorDigits
 	value := strconv.FormatInt(r.MinorUnits, 10)
 	if scale == 0 {
 		return value

@@ -1,15 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { csvColumns, type FinancialAccount, type ImportPreview, type ImportProblem, type Source } from "@/lib/imports";
 import type importMessages from "@/messages/imports.en.json";
+import { ImportDateField } from "./import-date-field";
 
 type Field = keyof typeof importMessages.fields;
 type Reason = keyof typeof importMessages.reasons;
@@ -17,7 +17,6 @@ type ProblemCode = keyof typeof importMessages.problems;
 
 export function ImportForm({ sources, financialAccounts }: { sources: Source[]; financialAccounts: FinancialAccount[] }) {
   const t = useTranslations("Imports");
-  const locale = useLocale();
   const router = useRouter();
   const [fileName, setFileName] = useState("");
   const [pending, setPending] = useState(false);
@@ -91,14 +90,8 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
               {financialAccounts.map((account) => <NativeSelectOption key={account.id} value={account.id}>{account.name}</NativeSelectOption>)}
             </NativeSelect>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="period_start">{t("fields.period_start")}</Label>
-            <Input {...fieldError("period_start")} className="h-11 max-w-55 shadow-none" id="period_start" lang={locale} name="period_start" type="date" required />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="period_end">{t("fields.period_end")}</Label>
-            <Input {...fieldError("period_end")} className="h-11 max-w-55 shadow-none" id="period_end" lang={locale} name="period_end" type="date" required />
-          </div>
+          <ImportDateField field="period_start" invalid={fieldError("period_start")["aria-invalid"]} />
+          <ImportDateField field="period_end" invalid={fieldError("period_end")["aria-invalid"]} />
         </div>
 
         <div className="space-y-3 border-t border-border pt-5">
@@ -144,7 +137,7 @@ export function ImportForm({ sources, financialAccounts }: { sources: Source[]; 
             <ul className="mt-2 space-y-2">
               {problem.issues.map(({ line, field, reason }, index) => {
                 const fieldKey = `fields.${field as Field}` as const;
-                const reasonKey = `reasons.${reason as Reason}` as const;
+                const reasonKey = !line && reason === "invalid_date" ? "reasons.invalid_form_date" : `reasons.${reason as Reason}` as const;
                 const label = t.has(fieldKey) ? t(fieldKey) : field;
                 return (
                   <li key={`${line}-${field}-${reason}-${index}`}>
