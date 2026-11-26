@@ -24,7 +24,7 @@ export async function verifyOpenTransactions(page: Page) {
     await expect(entry.getByText(description, { exact: true })).toBeVisible();
     await expect(entry.getByText(amount, { exact: true })).toBeVisible();
     await expect(entry.getByText(date, { exact: true })).toBeVisible();
-    await expect(entry).toContainText("DEMO-PAY-003");
+    await expect(entry.getByText("DEMO-PAY-003", { exact: true })).toHaveCSS("font-weight", "700");
     await expect(entry).toContainText("Amount difference");
     await expect(entry.getByText("R$1.00", { exact: true })).toBeVisible();
     await expect(entry.getByText("No pending proposals", { exact: true })).toBeVisible();

@@ -34,7 +34,11 @@ test("manages the catalog and confirms a mixed CSV after refreshing a changed So
 
   await sources.getByRole("button", { name: "Add Source" }).click();
   await sources.getByLabel("Name", { exact: true }).fill("Sistema da Matriz");
-  await selectFormOption(sources.getByRole("combobox", { name: "Side", exact: true }), "Internal");
+  const side = sources.getByRole("combobox", { name: "Side", exact: true });
+  await expect(side.locator("svg.lucide-log-in")).toBeVisible();
+  await side.click();
+  await expect(page.getByRole("option", { name: "External" }).locator("svg.lucide-log-out")).toBeVisible();
+  await page.getByRole("option", { name: "Internal" }).click();
   await sources.getByRole("button", { name: "Save" }).click();
   await expect(sources.getByText("Sistema da Matriz", { exact: true })).toBeVisible();
 

@@ -37,12 +37,12 @@
   "ranking": {
     "title": "Avaliação da IA",
     "recordedTitle": "Avaliação da IA registrada",
-    "summary": "Posição {rank, number} · Pontuação {score, number}/100"
+    "summary": "Posição {rank, number} · Pontuação <scoreValue>{score, number}/100</scoreValue>"
   },
   "evidence": {
     "title": "Evidências originais da proposta",
     "reference": "Comparação das referências de pagamento",
-    "referenceCounts": "Internas {internal, number} · Externas {external, number}",
+    "referenceCounts": "<internalSide>Internas {internal, number}</internalSide> · <externalSide>Externas {external, number}</externalSide>",
     "relations": {
       "missing": "Ausente em um ou ambos os lados",
       "different": "Referências diferentes",
@@ -50,6 +50,6 @@
     },
     "dateDifference": "Diferença entre as datas",
     "daysApart": "{count, plural, =0 {Mesma data} one {# dia} other {# dias}}",
-    "matchedAmount": "Mesmo valor com sinal"
+    "matchedAmount": "Mesmo valor e tipo de operação"
   }
 }

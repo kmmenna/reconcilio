@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { SourceSideLabel } from "@/components/source-side-label";
 import type { OpenTransaction } from "@/lib/reconciliation";
 import { formatMoney, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -52,7 +53,7 @@ export default async function OpenTransactionsPage() {
                       <p className="mt-0.5 text-muted-foreground wrap-anywhere">{item.source.name}</p>
                     </td>
                     <td className="min-w-0 font-medium lg:px-5 lg:py-4 lg:align-top" role="cell">
-                      {t(`sides.${item.side}`)}
+                      <SourceSideLabel side={item.side}>{t(`sides.${item.side}`)}</SourceSideLabel>
                     </td>
                     <td className="min-w-0 text-right font-semibold tabular-nums wrap-anywhere lg:px-5 lg:py-4 lg:align-top" role="cell">
                       {formatMoney(item.amount, item.currency, locale)}
@@ -66,7 +67,7 @@ export default async function OpenTransactionsPage() {
                           </div>
                           <div className="flex flex-wrap gap-x-2 text-muted-foreground">
                             <dt>{t("sharedReference")}</dt>
-                            <dd>{discrepancy.payment_reference}</dd>
+                            <dd className="font-bold text-foreground">{discrepancy.payment_reference}</dd>
                           </div>
                         </dl>
                       )}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { LocalTimestamp } from "@/components/local-timestamp";
+import { SourceSideLabel } from "@/components/source-side-label";
 import { Button } from "@/components/ui/button";
 import { readWorkflowID } from "@/lib/auth";
 import { workflowURL } from "@/lib/correlation";
@@ -59,7 +60,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
             <dl className="grid grid-cols-2 gap-x-5 gap-y-4 desktop:grid-cols-5">
               {([
                 { field: "source_id", value: preview.source.name },
-                { field: "source_side", value: t(`sides.${preview.source.side}`) },
+                { field: "source_side", value: <SourceSideLabel side={preview.source.side}>{t(`sides.${preview.source.side}`)}</SourceSideLabel> },
                 { field: "financial_account_id", value: accounts.map((account) => (
                   <div key={account.id}>
                     <span>{account.name}</span>

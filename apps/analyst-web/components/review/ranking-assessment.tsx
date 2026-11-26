@@ -14,6 +14,7 @@ export async function RankingAssessment({
 }) {
   const [t, locale] = await Promise.all([getTranslations("Review.ranking"), getLocale()]);
   const Heading = heading;
+  const scoreColor = assessment.score < 50 ? "text-destructive" : assessment.score <= 80 ? "text-score-amber" : "text-primary";
 
   return (
     <section data-ranking-evaluation-id={assessment.evaluation_id} className="mt-4 border-t border-border pt-4">
@@ -23,7 +24,11 @@ export async function RankingAssessment({
           <span>{t(recorded ? "recordedTitle" : "title")}</span>
         </Heading>
         <p className="text-sm font-medium tabular-nums text-muted-foreground">
-          {t("summary", { rank: assessment.rank, score: assessment.score })}
+          {t.rich("summary", {
+            rank: assessment.rank,
+            score: assessment.score,
+            scoreValue: (text) => <span className={`font-semibold ${scoreColor}`}>{text}</span>,
+          })}
         </p>
       </div>
       <p className="mt-1.5 text-sm leading-relaxed wrap-anywhere">{assessment.explanations[locale]}</p>

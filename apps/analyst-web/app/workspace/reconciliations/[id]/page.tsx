@@ -4,6 +4,8 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { LocalTimestamp } from "@/components/local-timestamp";
 import { ProposalEvidence } from "@/components/review/proposal-evidence";
 import { RankingAssessment } from "@/components/review/ranking-assessment";
+import { TransactionDirection } from "@/components/review/transaction-direction";
+import { SourceSideLabel } from "@/components/source-side-label";
 import type { ReconciliationDetail } from "@/lib/reconciliation";
 import { formatMoney, formatTransactionDate } from "@/lib/transaction-format";
 import { getWorkspaceToken } from "@/lib/workspace";
@@ -22,8 +24,8 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
 
   return (
     <main className="workspace">
-      <h1 className="page-title">{t("detailTitle")}</h1>
-      {result && <p className="mt-3 text-muted-foreground wrap-anywhere">{result.financial_account.name}</p>}
+      <h1 className="page-title wrap-anywhere">{result?.financial_account.name ?? t("detailTitle")}</h1>
+      {result && <p className="mt-2 text-sm text-muted-foreground">{t("detailTitle")}</p>}
       {result ? (
         <>
           <dl className="mt-7 grid gap-4 border-y border-border py-5 sm:grid-cols-3">
@@ -46,7 +48,9 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
           <div className="mt-7 grid divide-y divide-border rounded-xl border border-border bg-card sm:grid-cols-2 sm:divide-x sm:divide-y-0">
             {result.members.map((member) => (
               <section aria-labelledby={`member-${member.id}`} className="min-w-0 px-5 py-5 desktop:px-6" key={member.id}>
-                <h2 className="text-lg font-semibold" id={`member-${member.id}`}>{imports(`sides.${member.side}`)}</h2>
+                <h2 className="text-lg font-semibold" id={`member-${member.id}`}>
+                  <SourceSideLabel side={member.side}>{imports(`sides.${member.side}`)}</SourceSideLabel>
+                </h2>
                 <p className="mt-1 text-sm text-muted-foreground wrap-anywhere">{member.source.name}</p>
                 <p className="mt-4 font-medium whitespace-pre-wrap wrap-anywhere">{member.description}</p>
                 <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 border-t border-border pt-4">
@@ -92,16 +96,19 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
                   <dt className="text-sm text-muted-foreground">{imports("fields.payment_reference")}</dt>
                   <dd className="mt-1 font-semibold wrap-anywhere">{result.evidence.payment_reference}</dd>
                   <dd className="mt-1 text-sm text-muted-foreground">
-                    {t("evidence.referenceCounts", {
+                    {t.rich("evidence.referenceCounts", {
                       internal: result.evidence.internal_reference_count,
                       external: result.evidence.external_reference_count,
+                      internalSide: (text) => <SourceSideLabel side="internal">{text}</SourceSideLabel>,
+                      externalSide: (text) => <SourceSideLabel side="external">{text}</SourceSideLabel>,
                     })}
                   </dd>
                 </div>
                 <div className="min-w-0">
                   <dt className="text-sm text-muted-foreground">{t("amount")}</dt>
-                  <dd className="mt-1 font-semibold tabular-nums wrap-anywhere">
-                    {formatMoney(result.evidence.amount, result.evidence.currency, locale)}
+                  <dd className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-semibold tabular-nums wrap-anywhere">
+                    <span>{formatMoney(result.evidence.amount, result.evidence.currency, locale)}</span>
+                    <TransactionDirection amount={result.evidence.amount} />
                   </dd>
                 </div>
               </dl>

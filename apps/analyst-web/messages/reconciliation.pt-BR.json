@@ -21,10 +21,15 @@
   "detailNotFound": "A conciliação não foi encontrada.",
   "decisionActor": "Confirmada por",
   "engine": "Motor de conciliação",
+  "directions": {
+    "inflow": "Entrada",
+    "outflow": "Saída",
+    "none": "Sem movimentação"
+  },
   "evidence": {
     "title": "Evidências registradas",
-    "description": "As duas transações tinham o mesmo valor, com o mesmo sinal e a mesma moeda. A referência de pagamento em comum aparecia uma vez de cada lado quando a decisão foi registrada.",
-    "referenceCounts": "Interno {internal, number} · Externo {external, number}"
+    "description": "As duas transações tinham o mesmo valor, o mesmo tipo de operação e a mesma moeda. A referência de pagamento em comum aparecia uma vez de cada lado quando a decisão foi registrada.",
+    "referenceCounts": "<internalSide>Interno {internal, number}</internalSide> · <externalSide>Externo {external, number}</externalSide>"
   },
   "jobs": {
     "title": "Processamento da conciliação",

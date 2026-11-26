@@ -29,8 +29,12 @@ test("reprocesses the selected Financial Account and keeps the summary link acro
   await page.goto(`${origin}/workspace/reconciliations`);
 
   const reprocess = page.getByRole("button", { name: "Reprocess account" });
+  const accountSelect = page.getByRole("combobox", { name: "Financial Account" });
+  const filterButton = page.getByRole("button", { name: "Apply filter" });
+  const [selectBounds, filterBounds] = await Promise.all([accountSelect.boundingBox(), filterButton.boundingBox()]);
+  expect(selectBounds?.y).toBe(filterBounds?.y);
   await expect(reprocess).toBeDisabled();
-  await selectFormOption(page.getByRole("combobox", { name: "Financial Account" }), account.name);
+  await selectFormOption(accountSelect, account.name);
   const denied = await page.request.post(`${origin}/api/financial-accounts/${accountID}/reprocess`, {
     headers: { Origin: "https://example.invalid" },
   });

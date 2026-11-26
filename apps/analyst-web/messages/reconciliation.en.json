@@ -21,10 +21,15 @@
   "detailNotFound": "The reconciliation could not be found.",
   "decisionActor": "Confirmed by",
   "engine": "Matching engine",
+  "directions": {
+    "inflow": "Inflow",
+    "outflow": "Outflow",
+    "none": "No movement"
+  },
   "evidence": {
     "title": "Recorded evidence",
-    "description": "Both Transactions had the same signed amount and currency. Their shared Payment Reference occurred once on each side when the decision was recorded.",
-    "referenceCounts": "Internal {internal, number} · External {external, number}"
+    "description": "Both Transactions had the same amount, Transaction direction, and currency. Their shared Payment Reference occurred once on each side when the decision was recorded.",
+    "referenceCounts": "<internalSide>Internal {internal, number}</internalSide> · <externalSide>External {external, number}</externalSide>"
   },
   "jobs": {
     "title": "Reconciliation processing",

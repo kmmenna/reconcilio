@@ -21,7 +21,7 @@
   --panel-foreground: #f4fbf5;
   --panel-muted: #cee2d7;
   --panel-divider: #709386;
-  --panel-hover: #245244;
+  --panel-hover: #1c463a;
   --sidebar: #e4eee7;
   --sidebar-foreground: #243d34;
   --sidebar-divider: #c6d7cb;
@@ -29,6 +29,7 @@
   --sidebar-active: #cfe3d6;
   --sidebar-active-foreground: #104c3b;
   --destructive: #963228;
+  --score-amber: #825006;
 }
 
 @theme inline {
@@ -58,6 +59,7 @@
   --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-active-foreground: var(--sidebar-active-foreground);
   --color-destructive: var(--destructive);
+  --color-score-amber: var(--score-amber);
   --breakpoint-desktop: 45rem;
   --radius-md: 0.45rem;
 }

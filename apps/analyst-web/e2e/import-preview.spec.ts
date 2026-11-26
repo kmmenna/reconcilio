@@ -39,7 +39,10 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
 
   const startDate = page.getByLabel("Start date", { exact: true });
   const startCalendar = page.getByRole("button", { name: "Open calendar for Start date" });
-  await startDate.fill("11/15/2026");
+  await startDate.pressSequentially("1115");
+  await expect(startDate).toHaveValue("11/15");
+  await startDate.pressSequentially("2026");
+  await expect(startDate).toHaveValue("11/15/2026");
   await startCalendar.press("Enter");
   const calendar = page.getByRole("dialog", { name: "Calendar for Start date" });
   await expect(calendar.getByRole("button", { name: /Sunday, November 15, 2026$/ })).toBeFocused();
@@ -112,7 +115,18 @@ test("previews the Corporate Card CSVs and reloads the same import in both langu
   await expect(error).toContainText("Linha 2 · Valor");
   await expect(error).toContainText("casas decimais demais");
   await expect(page.getByLabel("Data inicial", { exact: true })).toHaveValue("16/11/2026");
-  await expect(page.getByLabel("Data final", { exact: true })).toHaveValue("22/11/2026");
+  const localizedEndDate = page.getByLabel("Data final", { exact: true });
+  await expect(localizedEndDate).toHaveValue("22/11/2026");
+  await localizedEndDate.fill("");
+  await localizedEndDate.pressSequentially("22112026");
+  await expect(localizedEndDate).toHaveValue("22/11/2026");
+  await localizedEndDate.press("Home");
+  await localizedEndDate.press("ArrowRight");
+  await localizedEndDate.press("Shift+ArrowRight");
+  await localizedEndDate.press("3");
+  await expect(localizedEndDate).toHaveValue("23/11/2026");
+  await localizedEndDate.fill("2026-11-22");
+  await expect(localizedEndDate).toHaveValue("22/11/2026");
   const endCalendar = page.getByRole("button", { name: "Abrir calendário — Data final" });
   await page.setViewportSize({ width: 320, height: 700 });
   await endCalendar.click();

@@ -3,12 +3,12 @@
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { Select } from "radix-ui";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 type FormSelectProps = Pick<ComponentProps<typeof Select.Root>,
   "defaultValue" | "disabled" | "name" | "onValueChange" | "required" | "value"> &
   Pick<ComponentProps<typeof Select.Trigger>, "aria-describedby" | "aria-invalid" | "className" | "id"> & {
-    options: readonly { value: string; label: string; disabled?: boolean }[];
+    options: readonly { value: string; label: ReactNode; disabled?: boolean }[];
     placeholder?: string;
   };
 
