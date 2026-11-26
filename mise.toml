@@ -42,15 +42,16 @@ run = "npm run build"
 depends = ["build:go", "build:web"]
 
 [tasks.test]
-dir = "apps/reconciliation"
-run = "go test ./..."
+description = "Run the Go tests with PostgreSQL on the selected container engine"
+run = "node scripts/orchestration-env.mjs sh scripts/test.sh"
 
 [tasks."browser:install"]
 dir = "apps/analyst-web"
 run = "npm exec -- playwright install --with-deps chromium"
 
 [tasks.smoke]
-run = "sh scripts/smoke.sh"
+description = "Run the browser smoke tests in an isolated Compose project"
+run = "node scripts/orchestration-env.mjs sh scripts/smoke.sh"
 
 [tasks."env:init"]
 description = "Create missing environment files from their examples"

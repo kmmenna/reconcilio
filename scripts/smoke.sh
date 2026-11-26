@@ -1,30 +1,56 @@
 #!/bin/sh
 set -eu
 
-project="reconcilio-smoke-$$"
-export RECONCILIATION_API_PORT=0
-export ANALYST_WEB_PORT="${RECONCILIO_SMOKE_PORT:-3100}"
-export WEB_ORIGIN="http://localhost:$ANALYST_WEB_PORT"
-export RECONCILIO_SMOKE_ORIGIN="$WEB_ORIGIN"
-export COMPOSE_DISABLE_ENV_FILE=1
-unset DATABASE_URL POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD BACKEND_API_ORIGIN
-unset RECONCILIO_API_ENABLED RECONCILIO_WORKER_ENABLED
+. ./scripts/container-engine.sh
+select_container_engine
+
+project=$(node -p '"reconcilio-smoke-" + require("node:crypto").randomBytes(8).toString("hex")')
+export COMPOSE_PROJECT_NAME="$project" RECONCILIATION_API_PORT=0
+export POSTGRES_DB=reconcilio_smoke POSTGRES_USER=reconcilio_smoke
+POSTGRES_PASSWORD=$(node -p 'require("node:crypto").randomBytes(16).toString("hex")')
+export POSTGRES_PASSWORD
+export DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@postgres:5432/$POSTGRES_DB?sslmode=disable"
+unset ANALYST_WEB_PORT BACKEND_API_ORIGIN WEB_ORIGIN JWT_SECRET COMPOSE_PROFILES
+unset RECONCILIO_API_ENABLED RECONCILIO_WORKER_ENABLED RECONCILIO_TRACE_STDOUT RECONCILIO_METRIC_STDOUT
+unset RECONCILIO_AI_PER_JOB_LIMIT RECONCILIO_AI_DAILY_LIMIT RECONCILIO_SMOKE_RANKING_URL
 unset OPENAI_API_KEY OPENAI_MODEL OPENAI_RESPONSES_URL
 
 compose() {
   if [ "${RECONCILIO_SMOKE_RANKING:-false}" = true ]; then
-    docker compose -p "$project" -f compose.yaml -f scripts/smoke-ranking.compose.yaml "$@"
-  else
-    docker compose -p "$project" "$@"
+    set -- -f scripts/smoke-ranking.compose.yaml "$@"
   fi
+  sh scripts/compose.sh --env-file /dev/null -p "$project" -f compose.yaml "$@"
 }
 
 cleanup() {
-  compose down --volumes
+  status=$?
+  trap - EXIT INT HUP TERM
+  if ! compose down --volumes && [ "$status" -eq 0 ]; then
+    status=1
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 129' HUP
+trap 'exit 143' TERM
 
-if ! compose up --build -d --wait; then
+compose build
+
+# Build before choosing a port so the time between releasing it and Compose
+# binding it stays short. Next.js needs the browser origin at startup.
+ANALYST_WEB_PORT=${RECONCILIO_SMOKE_PORT:-$(node -e '
+  const server = require("node:net").createServer();
+  server.listen(0, "127.0.0.1", () => {
+    console.log(server.address().port);
+    server.close();
+  });
+')}
+export ANALYST_WEB_PORT
+export WEB_ORIGIN="http://localhost:$ANALYST_WEB_PORT"
+export RECONCILIO_SMOKE_ORIGIN="$WEB_ORIGIN"
+
+if ! compose up -d --wait; then
   compose logs --tail 30
   exit 1
 fi
