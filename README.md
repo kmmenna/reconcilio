@@ -14,8 +14,10 @@ Run the following from the worktree root. The optional `env:init` task copies th
 ```sh
 mise run env:init
 mise run compose:up
-mise exec -- node scripts/orchestration-env.mjs sh scripts/compose.sh exec backend reconcilio bootstrap-admin
+mise run bootstrap-admin
 ```
+
+Bootstrap requires a running, migrated database. With a running Compose backend, the task uses that container's database, including any explicit `DATABASE_URL`.
 
 Open [Reconcilio on localhost:3000](http://localhost:3000) and sign in as `admin` with the generated password. The bootstrap command prints the password only when creating the account. Save it for later sign-ins. The API generates a signing key at startup when `JWT_SECRET` is unset, so restarting the API then requires signing in again. Set a randomly generated secret of at least 32 bytes to keep existing tokens valid through a restart.
 
@@ -35,6 +37,8 @@ mise run reconciliation:dev
 ```
 
 The task starts the worktree's Compose PostgreSQL, waits for it to be ready, and applies the current checkout's application and River queue migrations before the API listens on the configured `RECONCILIATION_API_PORT`. Compose and host development share the PostgreSQL volume when they use the same engine and project with the default Compose connection. The backend's `DATABASE_URL` override applies to the Compose backend and migration step. The development task connects to the project's PostgreSQL service on its automatically assigned loopback port.
+
+Once the API starts, run `mise run bootstrap-admin` in another terminal. With the Compose backend stopped, the task uses the worktree's running PostgreSQL. You can also bootstrap after stopping the host API while PostgreSQL is still running.
 
 Stop the API with Ctrl+C. Run `mise run compose:stop` to stop the database and retain its data.
 
@@ -124,7 +128,7 @@ RECONCILIO_TRACE_STDOUT=true RECONCILIO_METRIC_STDOUT=true \
   OPENAI_API_KEY=demo-only OPENAI_MODEL=demo-ranking \
   OPENAI_RESPONSES_URL=http://127.0.0.1:1/v1/responses \
   mise run compose:up
-mise exec -- node scripts/orchestration-env.mjs sh scripts/compose.sh exec backend reconcilio bootstrap-admin
+mise run bootstrap-admin
 mise run compose:logs --no-log-prefix -f backend
 ```
 
