@@ -6,7 +6,7 @@ const origin = process.env.RECONCILIO_SMOKE_ORIGIN ?? "http://localhost:3100";
 
 test.use({ locale: "en-US" });
 
-test("confirms both demo CSVs and reads the recorded evidence in either language", async ({ page }) => {
+test("reconciles demo imports and preserves competing proposal evidence in both languages", async ({ page, context }) => {
   const password = process.env.RECONCILIO_SMOKE_PASSWORD;
   if (!password) throw new Error("Run the smoke task or set RECONCILIO_SMOKE_PASSWORD.");
 
@@ -86,4 +86,59 @@ test("confirms both demo CSVs and reads the recorded evidence in either language
   await expect(page).toHaveURL(detailURL);
   await expect(page.getByRole("heading", { name: "Evidências registradas" })).toBeVisible();
   await expect(page.getByText("CLOUDHOST* MONTHLY", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Idioma").selectOption("en");
+  await expect(page.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await page.getByRole("link", { name: "Reconcilio" }).click();
+  await page.getByRole("link", { name: "Review queue" }).click();
+  await expect(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
+  await expect(page.getByText("ERP-002", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 pending alternatives", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Compare alternatives" }).click();
+
+  await expect(page.getByRole("heading", { name: "Compare Match Proposals" })).toBeVisible();
+  const groupURL = page.url();
+  const canva = page.getByRole("article", { name: "CANVA* I045" });
+  const adobe = page.getByRole("article", { name: "ADOBE* CLOUD" });
+  await expect(canva.getByText("CARD-002", { exact: true })).toBeVisible();
+  await expect(adobe.getByText("CARD-003", { exact: true })).toBeVisible();
+  const adobeLink = await adobe.getByRole("link", { name: "View proposal" }).getAttribute("href");
+  if (!adobeLink) throw new Error("The Adobe alternative is missing its direct proposal link.");
+
+  await canva.getByRole("link", { name: "View proposal" }).click();
+  await expect(page.getByText("Pending", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Back to alternatives" }).click();
+  await expect(page).toHaveURL(groupURL);
+
+  const staleProposal = await context.newPage();
+  await staleProposal.goto(new URL(adobeLink, origin).href);
+  await expect(staleProposal.getByText("Pending", { exact: true })).toBeVisible();
+  await staleProposal.getByLabel("Language").selectOption("pt-BR");
+  await expect(staleProposal.getByRole("heading", { name: "Evidências originais da proposta" })).toBeVisible();
+  await expect(staleProposal).toHaveURL(new URL(adobeLink, origin).href);
+  const crossOriginDecision = await page.request.post(`${origin}/api${adobeLink.replace("/workspace", "")}/reject`, {
+    headers: { Origin: "https://example.invalid" },
+  });
+  expect(crossOriginDecision.status()).toBe(403);
+
+  await canva.getByRole("button", { name: "Confirm match" }).click();
+  await expect(page.getByText(/^(Accepted|Aceita)$/)).toBeVisible();
+  await page.goto(groupURL);
+  await expect(page.getByText("Não há alternativas pendentes para esta transação.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Voltar à fila de revisão" }).click();
+  await expect(page.getByText("Nenhuma proposta de conciliação aguarda revisão.", { exact: true })).toBeVisible();
+
+  await staleProposal.getByRole("button", { name: "Confirmar conciliação" }).click();
+  await expect(staleProposal.getByText("Esta proposta mudou. As alternativas restantes foram atualizadas.", { exact: true })).toBeVisible();
+  await expect(staleProposal.getByText("Invalidada", { exact: true })).toBeVisible();
+  await expect(staleProposal.getByText("ADOBE* CLOUD", { exact: true })).toBeVisible();
+  await expect(staleProposal.getByText("-R$ 250,00", { exact: true }).first()).toBeVisible();
+  await staleProposal.reload();
+  await staleProposal.getByLabel("Idioma").selectOption("en");
+  await expect(staleProposal.getByText("Invalidated", { exact: true })).toBeVisible();
+  await expect(staleProposal.getByRole("heading", { name: "Original Match Evidence" })).toBeVisible();
+  await expect(staleProposal).toHaveURL(new URL(adobeLink, origin).href);
+  await staleProposal.getByRole("link", { name: "View reconciliation" }).click();
+  await expect(staleProposal.getByRole("heading", { name: "Reconciliation detail" })).toBeVisible();
+  await expect(staleProposal.getByText("CANVA* I045", { exact: true })).toBeVisible();
 });

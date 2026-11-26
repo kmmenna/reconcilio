@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { getWorkspaceProfile } from "@/lib/workspace";
 
 export default async function WorkspacePage() {
-  const [profile, t, imports, reconciliation] = await Promise.all([
+  const [profile, t, imports, reconciliation, review] = await Promise.all([
     getWorkspaceProfile(),
     getTranslations("Workspace"),
     getTranslations("Imports"),
     getTranslations("Reconciliation"),
+    getTranslations("Review"),
   ]);
 
   return (
@@ -34,6 +35,9 @@ export default async function WorkspacePage() {
             </Button>
             <Button asChild variant="outline" className="h-11 text-base">
               <Link href="/workspace/reconciliations">{reconciliation("title")}</Link>
+            </Button>
+            <Button asChild variant="outline" className="h-11 text-base">
+              <Link href="/workspace/review">{review("title")}</Link>
             </Button>
             <AccountLinks isAdmin={profile.is_admin} />
           </div>

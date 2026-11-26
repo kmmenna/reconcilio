@@ -28,10 +28,15 @@ export async function forwardWorkspaceRequest(
   if (!token) return problemResponse(401, "session_required", "Sign in to continue.");
 
   try {
-    const response = await requestAPI(path, {
-      method: request.method,
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const requestHeaders = new Headers({ Authorization: `Bearer ${token}` });
+    const options: RequestInit & { duplex?: "half" } = { method: request.method, headers: requestHeaders };
+    if (request.body) {
+      const contentType = request.headers.get("content-type");
+      if (contentType) requestHeaders.set("Content-Type", contentType);
+      options.body = request.body;
+      options.duplex = "half";
+    }
+    const response = await requestAPI(path, options);
     const contentType = response.headers.get("content-type");
     if (response.ok || (response.status < 500 && contentType?.startsWith("application/problem+json"))) {
       const headers = new Headers({ "Cache-Control": "no-store" });
