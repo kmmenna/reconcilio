@@ -142,50 +142,52 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
                 <h2 className="text-lg font-semibold" id="preview-rows">{t("transactions")}</h2>
                 <p className="text-sm text-muted-foreground">{t("rowCount", { count: preview.rows.length })}</p>
               </div>
-              <table aria-labelledby="preview-rows" className="block w-full rounded-xl border border-border bg-card text-left text-sm desktop:table" role="table">
-                <thead className="sr-only bg-accent desktop:not-sr-only" role="rowgroup">
-                  <tr role="row">
-                    {columns.map((column) => (
-                      <th className={`px-4 py-3 font-semibold ${column === "amount" ? "text-right" : ""}`} key={column} role="columnheader" scope="col">
-                        {t(`fields.${column}`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="block desktop:table-row-group" role="rowgroup">
-                  {preview.rows.map((row) => (
-                    <tr
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-t border-border px-4 py-3 first:border-t-0 desktop:table-row desktop:align-top desktop:first:border-t"
-                      key={row.line}
-                      role="row"
-                    >
-                      <td className="col-span-2 row-start-2 text-muted-foreground tabular-nums desktop:px-4 desktop:py-3 desktop:whitespace-nowrap desktop:text-foreground" role="cell">
-                        <time dateTime={row.transaction_date}>{date(row.transaction_date)}</time>
-                      </td>
-                      <td className="col-start-1 row-start-1 font-medium whitespace-pre-wrap wrap-anywhere desktop:max-w-sm desktop:px-4 desktop:py-3 desktop:font-normal" role="cell">
-                        {row.description}
-                      </td>
-                      <td className="col-start-2 row-start-1 text-right font-medium tabular-nums wrap-anywhere desktop:px-4 desktop:py-3 desktop:whitespace-nowrap" role="cell">
-                        {formatMoney(row.amount, row.currency, locale)}
-                      </td>
-                      {mixed && (
-                        <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
-                          <span className="mr-2 desktop:hidden">{t("fields.financial_account")}</span>
-                          <span className="font-mono text-xs">{accountsByID.get(row.financial_account_id ?? "")?.code}</span>
-                        </td>
-                      )}
-                      <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere desktop:mt-0 desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
-                        <span className="mr-2 desktop:hidden">{t("fields.source_reference")}</span>
-                        {row.source_reference || t("absentReference")}
-                      </td>
-                      <td className="col-span-2 text-muted-foreground wrap-anywhere desktop:max-w-40 desktop:px-4 desktop:py-3" role="cell">
-                        <span className="mr-2 desktop:hidden">{t("fields.payment_reference")}</span>
-                        {row.payment_reference || t("absentReference")}
-                      </td>
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <table aria-labelledby="preview-rows" className="block w-full text-left text-sm lg:table" role="table">
+                  <thead className="sr-only bg-accent lg:not-sr-only" role="rowgroup">
+                    <tr role="row">
+                      {columns.map((column) => (
+                        <th className={`px-5 py-3 ${column === "amount" ? "text-right" : ""}`} key={column} role="columnheader" scope="col">
+                          {t(`fields.${column}`)}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="block lg:table-row-group" role="rowgroup">
+                    {preview.rows.map((row) => (
+                      <tr
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 border-t border-border p-4 first:border-t-0 lg:table-row lg:align-top lg:first:border-t"
+                        key={row.line}
+                        role="row"
+                      >
+                        <td className="col-span-2 row-start-2 text-muted-foreground tabular-nums lg:px-5 lg:py-4 lg:whitespace-nowrap lg:text-foreground" role="cell">
+                          <time dateTime={row.transaction_date}>{date(row.transaction_date)}</time>
+                        </td>
+                        <td className="col-start-1 row-start-1 font-medium whitespace-pre-wrap wrap-anywhere lg:max-w-sm lg:px-5 lg:py-4" role="cell">
+                          {row.description}
+                        </td>
+                        <td className="col-start-2 row-start-1 text-right font-semibold tabular-nums wrap-anywhere lg:px-5 lg:py-4 lg:whitespace-nowrap" role="cell">
+                          {formatMoney(row.amount, row.currency, locale)}
+                        </td>
+                        {mixed && (
+                          <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere lg:mt-0 lg:max-w-40 lg:px-5 lg:py-4" role="cell">
+                            <span className="mr-2 lg:hidden">{t("fields.financial_account")}</span>
+                            <span className="font-mono text-xs">{accountsByID.get(row.financial_account_id ?? "")?.code}</span>
+                          </td>
+                        )}
+                        <td className="col-span-2 mt-1 text-muted-foreground wrap-anywhere lg:mt-0 lg:max-w-40 lg:px-5 lg:py-4" role="cell">
+                          <span className="mr-2 lg:hidden">{t("fields.source_reference")}</span>
+                          {row.source_reference || t("absentReference")}
+                        </td>
+                        <td className="col-span-2 text-muted-foreground wrap-anywhere lg:max-w-40 lg:px-5 lg:py-4" role="cell">
+                          <span className="mr-2 lg:hidden">{t("fields.payment_reference")}</span>
+                          {row.payment_reference || t("absentReference")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
           )}
         </>

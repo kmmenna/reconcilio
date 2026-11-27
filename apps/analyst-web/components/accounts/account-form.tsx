@@ -39,6 +39,11 @@ const fields = {
     error: "invalid_new_password",
     hint: "passwordHint",
   },
+  confirmPassword: {
+    type: "password",
+    autoComplete: "new-password",
+    error: "password_mismatch",
+  },
   currentPassword: {
     jsonName: "current_password",
     type: "password",
@@ -63,7 +68,7 @@ const forms = {
   create: {
     path: "/api/users",
     method: "POST",
-    fields: ["username", "displayName", "password"],
+    fields: ["username", "displayName", "password", "confirmPassword"],
     submit: "createSubmit",
     pending: "createPending",
   },
@@ -105,8 +110,16 @@ export function AccountForm({ kind, displayName }: { kind: FormKind; displayName
     setSaved(null);
 
     for (const field of form.fields) {
-      const definition = fields[field];
       const value = String(data.get(field) ?? "");
+      if (field === "confirmPassword") {
+        if (value !== data.get("password")) {
+          setError(fields.confirmPassword.error);
+          return;
+        }
+        continue;
+      }
+
+      const definition = fields[field];
       const length = Array.from(value).length;
       const nameInvalid = definition.type === "text" && (!value.trim() || /\p{Cc}/u.test(value));
       if (length < definition.min || length > definition.max || nameInvalid) {

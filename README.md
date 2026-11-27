@@ -1,6 +1,49 @@
 # Reconcilio
 
-Reconcilio helps Financial Operations Analysts reconcile internal ledger records with bank or card statements. The engine confirms pairs with strong evidence, sends competing Match Proposals to an analyst, and keeps discrepancies and past decisions visible. The workspace supports English and Brazilian Portuguese.
+Reconcilio helps financial operations analysts reconcile internal ledger records with bank and card statements. Repeated amounts and overlapping source files make it time-consuming to identify records that describe the same payment. Reconcilio confirms unambiguous matches automatically and gives analysts the evidence to review proposals, investigate differences, and explain past decisions.
+
+[Run locally](#run-locally) · [Try the demo](#corporate-card-walkthrough) · [Run automated tests](#checks-and-tests)
+
+## What analysts can do
+
+- **Import and validate CSVs.** Register Financial Accounts and Sources, preview files for one or more accounts, and inspect the inferred Import Coverage. Review conflicting reimports and choose whether to keep the original records or cancel the import.
+- **Track reconciliation.** Follow background processing for each affected account and reprocess open Transactions on demand. The engine confirms a pair when both records have the same signed amount and currency and share a Payment Reference that appears once on each side of the same account.
+- **Review competing proposals.** Compare external candidates and their evidence side by side, then confirm or reject a proposal. Optional AI ranking adds a score and explanations in English and Brazilian Portuguese.
+- **Investigate differences and revisit decisions.** View open Transactions and known amount discrepancies. Open past decisions to see the original evidence and who made the decision.
+- **Work in English or Brazilian Portuguese.** Choose an interface language or follow the browser preference. Local accounts identify analysts in the decision history.
+
+## Corporate Card walkthrough
+
+The demo uses synthetic ERP and card statement records to show an automatic match, a manual review, and an amount discrepancy. [Start Reconcilio locally](#run-locally).
+
+1. Choose **English** from **Language** at sign-in or in the workspace to follow these button labels. **Português (Brasil)** switches the interface, dates, Money, and errors. **Automatic** returns to your browser preference. Shared links keep the same address and open in the signed-in reader’s language.
+2. Sign in to open **Import CSV**. On narrow screens, select **Menu** to see the same destinations as the sidebar. Select **Demo ERP** as the Source and **Corporate Card** as the Financial Account. Choose [internal.csv](examples/demo/internal.csv) and select **Preview CSV**. Check the Source, side, account, and rows. The preview shows Import Coverage from November 16 through November 20, 2026. Select **Confirm import**. The receipt shows three Transactions imported. Open **Track processing** and wait for **Completed**.
+3. Select **Import CSV** from the workspace navigation. Select **Demo Card Statement**, choose [external.csv](examples/demo/external.csv), and use the same account. Preview the file and confirm the import. Import Coverage runs from November 16 through November 21, 2026. The receipt shows four Transactions imported. Open **Track processing** and wait for **Completed**. The summary shows one automatic Reconciliation and two new Match Proposals.
+4. From the completed job, open **View Reconciliations**, then **View details** for the automatic decision. Verify that `ERP-001` and `CARD-001` share the unique `DEMO-PAY-001` Payment Reference and BRL -89.90.
+5. Open **Review queue** from the workspace navigation and select **Compare alternatives** for `ERP-002`. Canva (`CARD-002`) and Adobe (`CARD-003`) both have a signed amount of BRL -250.00 and a one-day difference from the internal record. Before deciding, open Adobe’s **View proposal** link in another tab or copy its address. Select **Confirm match** for Canva. Reload the saved Adobe link to see **Invalidated**, its original evidence, and a link to the Reconciliation that accepted Canva.
+6. Select **Open Transactions** from the workspace navigation. Find `ERP-003` and `CARD-004`. Both share `DEMO-PAY-003` and remain open with an **Amount difference** of BRL 1.00.
+
+See the [fixture reference](examples/demo/README.md) for the expected outcomes.
+
+### Resolve a conflicting reimport
+
+1. Open **Import CSV** and preview [reimport-amount-conflict.csv](examples/test-cases/reimport-amount-conflict.csv) with **Demo ERP** and **Corporate Card**. The preview shows Import Coverage from November 16 through November 22, 2026. Review the stored BRL -89.90 and incoming BRL -94.90 for `ERP-001`.
+2. Select **Cancel import** first. Check **Import canceled** and the **Recorded decision**, then reload the receipt. **Open Transactions** has no `ERP-004`.
+3. Upload the same fixture again and select **Keep originals and import**. Verify that the **Import confirmed** receipt records the decision and one imported Transaction. Find `ERP-004` at BRL -34.50 in **Open Transactions**. The original automatic Reconciliation still shows `ERP-001` with `CARD-001` at BRL -89.90. Uploading the unchanged fixture once more opens the confirmed receipt.
+
+See the [conflict fixture reference](examples/test-cases/README.md) for both outcomes.
+
+## Documentation
+
+- Frontend architecture, component choices, and browser test coverage. [Analyst web README](apps/analyst-web/README.md)
+- Go backend architecture, PostgreSQL jobs, and integration test coverage. [Reconciliation backend README](apps/reconciliation/README.md)
+- How the backend ranks proposals, validates model responses, and falls back to engine evidence. [AI integration](apps/reconciliation/docs/AI_INTEGRATION.md)
+- How Codex and its skills supported planning, implementation, and review. [AI usage](docs/AI_USAGE.md)
+- Proposed product and operational improvements, including closing exports and manual matching of open Transactions. [Next steps](docs/NEXT_STEPS.md)
+- The terminology used across the product and code. [Domain glossary](GLOSSARY.md)
+- The rationale behind architectural and product decisions. [Architecture decisions](docs/adr/)
+- The MVP approach, trade-offs, and verification. [Submission write-up](docs/submission.md)
+- Compose, host development, and test settings. [Environment configuration](docs/environment.md)
 
 ## Run locally
 
@@ -30,75 +73,6 @@ mise run compose:stop
 
 Stopping removes this project's containers and network. Its PostgreSQL volume is reused the next time you start the same project on the same engine.
 
-### Run the Go API on the host
-
-Stop the Compose stack before switching to a host API on the same port. Run the development task from the worktree root.
-
-```sh
-mise run reconciliation:dev
-```
-
-The task starts the worktree's Compose PostgreSQL, waits for it to be ready, and applies the current checkout's application and River queue migrations before the API listens on the configured `RECONCILIATION_API_PORT`. Compose and host development share the PostgreSQL volume when they use the same engine and project with the default Compose connection. The backend's `DATABASE_URL` override applies to the Compose backend and migration step. The development task connects to the project's PostgreSQL service on its automatically assigned loopback port.
-
-Once the API starts, run `mise run bootstrap-admin` in another terminal. With the Compose backend stopped, the task uses the worktree's running PostgreSQL. You can also bootstrap after stopping the host API while PostgreSQL is still running.
-
-Stop the API with Ctrl+C. Run `mise run compose:stop` to stop the database and retain its data.
-
-### Worktree settings
-
-Mise tasks read these settings from an optional `.env` in the worktree root. A local value takes precedence over an inherited shell value. Compose's automatic loading of the root file is disabled. See [Environment configuration](docs/environment.md) for settings owned by the backend and frontend, including database initialization and origin overrides.
-
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `CONTAINER_ENGINE` | `docker` | Set to `podman` to select Podman. An empty value selects Docker. |
-| `COMPOSE_PROJECT_NAME` | Worktree directory name | Compose normalizes the default. Set a unique project name when directory names would produce the same project name. |
-| `RECONCILIATION_API_PORT` | `8080` | API port on `127.0.0.1` in both modes. |
-| `ANALYST_WEB_PORT` | `3000` | Frontend port published on `127.0.0.1`. Its public origin defaults to `http://localhost` on this port. |
-
-To run two worktrees side by side, put a different project name and different host ports in each worktree's root `.env`. For example, the first can use the defaults or specify `COMPOSE_PROJECT_NAME=reconcilio-main`, `RECONCILIATION_API_PORT=8080`, and `ANALYST_WEB_PORT=3000`. In the second, use:
-
-```dotenv
-COMPOSE_PROJECT_NAME=reconcilio-feature
-RECONCILIATION_API_PORT=8081
-ANALYST_WEB_PORT=3001
-```
-
-Run `mise run compose:up` in each worktree. The browser apps open on [localhost:3000](http://localhost:3000) and [localhost:3001](http://localhost:3001). Each project has its own PostgreSQL volume and needs its own initial administrator.
-
-To stay signed in to both instances in the same browser profile, open each at a different hostname. Session cookies are shared across ports on the same hostname. For example, keep `http://localhost:3000` for the first worktree, set `WEB_ORIGIN=http://127.0.0.1:3001` in the second worktree's `apps/analyst-web/.env`, and open [127.0.0.1:3001](http://127.0.0.1:3001) there.
-
-### Run the Next.js frontend on the host
-
-Install the frontend dependencies, then start Next.js in its own terminal.
-
-```sh
-mise run web:install
-mise run analyst-web:dev
-```
-
-Open the frontend at `http://localhost:<ANALYST_WEB_PORT>` (port 3000 by default). The frontend task starts independently. Sign-in and other API-backed features require a reachable Go API, which you can start in another terminal with `mise run reconciliation:dev`.
-
-Set `BACKEND_API_ORIGIN` in `apps/analyst-web/.env` to tell Next.js which Go API to call. It defaults to `http://localhost:<RECONCILIATION_API_PORT>` for host development. Set `WEB_ORIGIN` in the same file if the browser opens the frontend at a different origin. Next.js uses that address to validate browser requests.
-
-### Corporate Card walkthrough
-
-1. Choose **English** from **Language** at sign-in or in the workspace to follow these button labels. **Português (Brasil)** switches the interface, dates, Money, and errors. **Automatic** returns to your browser preference. Shared links keep the same address and open in the signed-in reader’s language.
-2. Sign in to open **Import CSV**. On narrow screens, select **Menu** to see the same destinations as the sidebar. Select **Demo ERP** as the Source and **Corporate Card** as the Financial Account. Choose [internal.csv](examples/demo/internal.csv) and select **Preview CSV**. Check the Source, side, account, and rows. The preview shows Import Coverage from November 16 through November 20, 2026. Select **Confirm import**. The receipt shows three Transactions imported. Open **Track processing** and wait for **Completed**.
-3. Select **Import CSV** from the workspace navigation. Select **Demo Card Statement**, choose [external.csv](examples/demo/external.csv), and use the same account. Preview the file and confirm the import. Import Coverage runs from November 16 through November 21, 2026. The receipt shows four Transactions imported. Open **Track processing** and wait for **Completed**. The summary shows one automatic Reconciliation and two new Match Proposals.
-4. From the completed job, open **View Reconciliations**, then **View details** for the automatic decision. Verify that `ERP-001` and `CARD-001` share the unique `DEMO-PAY-001` Payment Reference and BRL -89.90.
-5. Open **Review queue** from the workspace navigation and select **Compare alternatives** for `ERP-002`. Canva (`CARD-002`) and Adobe (`CARD-003`) both have a signed amount of BRL -250.00 and a one-day difference from the internal record. Before deciding, open Adobe’s **View proposal** link in another tab or copy its address. Select **Confirm match** for Canva. Reload the saved Adobe link to see **Invalidated**, its original evidence, and a link to the Reconciliation that accepted Canva.
-6. Select **Open Transactions** from the workspace navigation. Find `ERP-003` and `CARD-004`. Both share `DEMO-PAY-003` and remain open with an **Amount difference** of BRL 1.00.
-
-See the [fixture reference](examples/demo/README.md) for the expected outcomes.
-
-### Resolve a conflicting reimport
-
-1. Open **Import CSV** and preview [reimport-amount-conflict.csv](examples/test-cases/reimport-amount-conflict.csv) with **Demo ERP** and **Corporate Card**. The preview shows Import Coverage from November 16 through November 22, 2026. Review the stored BRL -89.90 and incoming BRL -94.90 for `ERP-001`.
-2. Select **Cancel import** first. Check **Import canceled** and the **Recorded decision**, then reload the receipt. **Open Transactions** has no `ERP-004`.
-3. Upload the same fixture again and select **Keep originals and import**. Verify that the **Import confirmed** receipt records the decision and one imported Transaction. Find `ERP-004` at BRL -34.50 in **Open Transactions**. The original automatic Reconciliation still shows `ERP-001` with `CARD-001` at BRL -89.90. Uploading the unchanged fixture once more opens the confirmed receipt.
-
-See the [conflict fixture reference](examples/test-cases/README.md) for both outcomes.
-
 ### Local operations
 
 The backend runs the API and River worker together by default. To run them in separate processes, set `RECONCILIO_WORKER_ENABLED=false` for the API and `RECONCILIO_API_ENABLED=false` for the worker. Run `reconcilio migrate` against the shared database before starting those processes.
@@ -123,7 +97,7 @@ Each evaluation sends only the redacted descriptions for a complete group. The w
 
 ## Console telemetry
 
-The API and River worker emit JSON logs to stdout. Set `RECONCILIO_TRACE_STDOUT=true` and `RECONCILIO_METRIC_STDOUT=true` independently to export spans and metrics to the same console. Metrics are collected every 10 seconds.
+The API and River worker emit JSON logs to stdout. Set `RECONCILIO_TRACE_STDOUT=true` and `RECONCILIO_METRIC_STDOUT=true` independently to export spans and metrics to the same console. Metrics are collected every 10 seconds. [Backend observability and available signals](apps/reconciliation/README.md#observability)
 
 To observe engine fallback locally, configure the ranking client with a test key and an endpoint that refuses connections inside the backend container.
 
@@ -141,6 +115,58 @@ On a fresh demo database, preview and confirm the internal CSV, wait for its job
 For live provider spend, select the OpenAI API project that owns the key. Open **Analytics → Spend**, choose the UTC date range, and filter by API key or model as needed. Recent calls can take time to appear. [OpenAI Spend dashboard help](https://help.openai.com/en/articles/10478918-reviewing-api-usage-and-costs#review-spend)
 
 ## Development
+
+### Run the Go API on the host
+
+Stop the Compose stack before switching to a host API on the same port. Run the development task from the worktree root.
+
+```sh
+mise run reconciliation:dev
+```
+
+The task starts the worktree's Compose PostgreSQL, waits for it to be ready, and applies the current checkout's application and River queue migrations before the API listens on the configured `RECONCILIATION_API_PORT`. Compose and host development share the PostgreSQL volume when they use the same engine and project with the default Compose connection. The backend's `DATABASE_URL` override applies to the Compose backend and migration step. The development task connects to the project's PostgreSQL service on its automatically assigned loopback port.
+
+Once the API starts, run `mise run bootstrap-admin` in another terminal. With the Compose backend stopped, the task uses the worktree's running PostgreSQL. You can also bootstrap after stopping the host API while PostgreSQL is still running.
+
+Stop the API with Ctrl+C. Run `mise run compose:stop` to stop the database and retain its data.
+
+### Run the Next.js frontend on the host
+
+Install the frontend dependencies, then start Next.js in its own terminal.
+
+```sh
+mise run web:install
+mise run analyst-web:dev
+```
+
+Open the frontend at `http://localhost:<ANALYST_WEB_PORT>` (port 3000 by default). The frontend task starts independently. Sign-in and other API-backed features require a reachable Go API, which you can start in another terminal with `mise run reconciliation:dev`.
+
+Set `BACKEND_API_ORIGIN` in `apps/analyst-web/.env` to tell Next.js which Go API to call. It defaults to `http://localhost:<RECONCILIATION_API_PORT>` for host development. Set `WEB_ORIGIN` in the same file if the browser opens the frontend at a different origin. Next.js uses that address to validate browser requests.
+
+### Worktree settings
+
+Mise tasks read these settings from an optional `.env` in the worktree root. A local value takes precedence over an inherited shell value. Compose's automatic loading of the root file is disabled. See [Environment configuration](docs/environment.md) for settings owned by the backend and frontend, including database initialization and origin overrides.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `CONTAINER_ENGINE` | `docker` | Set to `podman` to select Podman. An empty value selects Docker. |
+| `COMPOSE_PROJECT_NAME` | Worktree directory name | Compose normalizes the default. Set a unique project name when directory names would produce the same project name. |
+| `RECONCILIATION_API_PORT` | `8080` | API port on `127.0.0.1` in both modes. |
+| `ANALYST_WEB_PORT` | `3000` | Frontend port published on `127.0.0.1`. Its public origin defaults to `http://localhost` on this port. |
+
+To run two worktrees side by side, put a different project name and different host ports in each worktree's root `.env`. For example, the first can use the defaults or specify `COMPOSE_PROJECT_NAME=reconcilio-main`, `RECONCILIATION_API_PORT=8080`, and `ANALYST_WEB_PORT=3000`. In the second, use:
+
+```dotenv
+COMPOSE_PROJECT_NAME=reconcilio-feature
+RECONCILIATION_API_PORT=8081
+ANALYST_WEB_PORT=3001
+```
+
+Run `mise run compose:up` in each worktree. The browser apps open on [localhost:3000](http://localhost:3000) and [localhost:3001](http://localhost:3001). Each project has its own PostgreSQL volume and needs its own initial administrator.
+
+To stay signed in to both instances in the same browser profile, open each at a different hostname. Session cookies are shared across ports on the same hostname. For example, keep `http://localhost:3000` for the first worktree, set `WEB_ORIGIN=http://127.0.0.1:3001` in the second worktree's `apps/analyst-web/.env`, and open [127.0.0.1:3001](http://127.0.0.1:3001) there.
+
+### Checks and tests
 
 Install the pinned tools with mise and install the web dependencies. `mise run test` runs the Go unit and PostgreSQL integration tests on the selected engine. Start Docker or the Podman API service or machine before running it.
 
@@ -166,5 +192,3 @@ RECONCILIO_SMOKE_RANKING=true mise run smoke
 ```
 
 The first smoke run checks the engine-only workflow, both conflict receipts, localized validation, and review history. The second uses a controlled local ranker without an OpenAI key. It verifies the recorded evaluation, order, and score across languages in review and decision history, and checks that language and direct-link changes cause no additional provider requests. [Test environment details](docs/environment.md#tests)
-
-Read the [submission write-up](docs/submission.md), [domain glossary](GLOSSARY.md), and [architecture decisions](docs/adr/) for the rationale behind the implementation.
