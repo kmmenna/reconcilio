@@ -43,15 +43,35 @@ test("creates an analyst and lets them update their own profile and sign-in cred
   const missingOrigin = await context.request.post(`${origin}/api/users`, { data: account });
   expect(missingOrigin.status()).toBe(403);
 
+  const confirmPassword = page.getByLabel("Confirm password", { exact: true });
+  const submitAccount = page.getByRole("button", { name: "Create user", exact: true });
+  const accountError = page.getByRole("main").getByRole("alert");
   const fillAccount = async () => {
     await page.getByLabel("Username", { exact: true }).fill(username);
     await page.getByLabel("Display name", { exact: true }).fill(displayName);
     await page.getByLabel("Password", { exact: true }).fill(initialPassword);
-    await page.getByRole("button", { name: "Create user", exact: true }).click();
   };
   await fillAccount();
+  await submitAccount.click();
+  await expect(accountError).toHaveText("The passwords must match.");
+  await expect(confirmPassword).toHaveAttribute("aria-invalid", "true");
+
+  await confirmPassword.fill("different-password");
+  await submitAccount.click();
+  await expect(accountError).toHaveText("The passwords must match.");
+
+  await changeWorkspaceLanguage(page, "pt-BR");
+  await expect(accountError).toHaveText("As senhas precisam ser iguais.");
+  await expect(page.getByLabel("Confirmar senha", { exact: true })).toHaveValue("different-password");
+  await changeWorkspaceLanguage(page, "en");
+
+  await confirmPassword.fill(initialPassword);
+  await submitAccount.click();
   await expect(page.getByRole("status")).toHaveText(`Account for ${displayName} (${username}) created.`);
+  await expect(confirmPassword).toBeEmpty();
   await fillAccount();
+  await confirmPassword.fill(initialPassword);
+  await submitAccount.click();
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("This username is already in use. Choose a different one.");
 
   await changeWorkspaceLanguage(page, "pt-BR");
