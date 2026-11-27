@@ -5,14 +5,12 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
-	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/telemetry"
 )
@@ -30,7 +28,7 @@ type scheduledJob struct {
 
 func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel bool, keepIDs []string) (importView, error) {
 	var receipt importView
-	var reviewProblem *httpapi.Problem
+	var reviewError error
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := s.queries.WithTx(tx)
 		record, accounts, err := lockImportAccounts(ctx, tx, queries, id)
@@ -69,11 +67,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			return err
 		}
 		if record.SourceSide != currentSource.Side {
-			problem := httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
-			problem.Context = importProblemContext{
-				PreviewSourceSide: record.SourceSide, CurrentSourceSide: currentSource.Side,
-			}
-			return problem
+			return &sourceSideChanged{previewSide: record.SourceSide, currentSide: currentSource.Side}
 		}
 		receipt.Source = currentSource
 		replay, err := findReplay(ctx, queries, record.SourceID, accountIDs(accounts), record.FileFingerprint)
@@ -96,7 +90,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 		if !slices.EqualFunc(document.Conflicts, conflicts, func(a, b importConflict) bool { return a.ID == b.ID }) {
 			document.Conflicts = conflicts
 			preview := presentPreview(id, currentSource, accounts, record.PeriodStart, record.PeriodEnd, document)
-			reviewProblem = conflictProblem("import_conflicts_changed", "The conflicts changed. Review the updated preview.", preview)
+			reviewError = &conflictsChanged{preview: preview}
 			// Commit the updated preview before returning 409 so the same ID can be reviewed again.
 			data, err := json.Marshal(document)
 			if err != nil {
@@ -106,7 +100,7 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 		}
 		if !acceptsConflicts(document.Conflicts, keepIDs) {
 			preview := presentPreview(id, currentSource, accounts, record.PeriodStart, record.PeriodEnd, document)
-			return conflictProblem("import_conflicts_require_review", "Review the conflicts before confirming.", preview)
+			return &conflictsRequireReview{preview: preview}
 		}
 
 		count, err := insertImportTransactions(ctx, queries, record, assessments, len(document.Rows))
@@ -144,8 +138,8 @@ func (s *Service) resolve(ctx context.Context, id, analystID pgtype.UUID, cancel
 			ID: id, ConfirmedAt: pgtype.Timestamptz{Time: confirmedAt, Valid: true}, ConfirmedBy: analystID, Receipt: observation,
 		})
 	})
-	if err == nil && reviewProblem != nil {
-		err = reviewProblem
+	if err == nil && reviewError != nil {
+		err = reviewError
 	}
 	return receipt, err
 }
@@ -188,10 +182,4 @@ func acceptsConflicts(conflicts []importConflict, keepIDs []string) bool {
 		}
 	}
 	return true
-}
-
-func conflictProblem(code, detail string, preview importView) *httpapi.Problem {
-	problem := httpapi.NewProblem(http.StatusConflict, code, detail)
-	problem.Context = importProblemContext{Preview: &preview}
-	return problem
 }

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/money"
 )
@@ -73,7 +72,7 @@ func assessAccount(ctx context.Context, queries *ingestiondb.Queries, sourceID, 
 
 	newByReference := make(map[string]stagedRow, len(references))
 	reported := make(map[int]bool)
-	var issues []httpapi.Issue
+	var issues []importIssue
 	for _, row := range rows {
 		if row.SourceReference == "" {
 			assessment.NewRows = append(assessment.NewRows, row)
@@ -116,8 +115,8 @@ func assessAccount(ctx context.Context, queries *ingestiondb.Queries, sourceID, 
 	return assessment, nil
 }
 
-func duplicateReferenceIssue(line int) httpapi.Issue {
-	return httpapi.Issue{Line: line, Field: "source_reference", Reason: "conflicting_source_reference"}
+func duplicateReferenceIssue(line int) importIssue {
+	return importIssue{Line: line, Field: "source_reference", Reason: "conflicting_source_reference"}
 }
 
 func compareTransaction(accountID pgtype.UUID, stored transactionValues, row stagedRow) (importConflict, error) {

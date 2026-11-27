@@ -9,10 +9,7 @@ import (
 	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog/catalogdb"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/identity"
 )
@@ -61,19 +58,12 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		if _, err := identities.RequireUser(ctx, in.Authorization); err != nil {
 			return nil, err
 		}
-		sources, err := s.queries.ListSources(ctx)
+		sources, err := s.listSources(ctx)
 		if err != nil {
 			slog.ErrorContext(ctx, "Could not list Sources", "error", err)
 			return nil, huma.Error500InternalServerError("Sources are temporarily unavailable.")
 		}
-		out := &sourcesOutput{CacheControl: "no-store", Body: make([]sourceEntry, 0, len(sources))}
-		for _, source := range sources {
-			out.Body = append(out.Body, sourceEntry{
-				Source:       Source{ID: source.ID.String(), Name: source.Name, Side: source.Side},
-				SideEditable: source.SideEditable,
-			})
-		}
-		return out, nil
+		return &sourcesOutput{CacheControl: "no-store", Body: sources}, nil
 	})
 	s.registerCatalogWrites(api, identities)
 }
@@ -139,14 +129,14 @@ func (s *Service) registerCatalogWrites(api huma.API, identities *identity.Servi
 		if name == "" || code == "" {
 			return nil, invalidCatalogEntry()
 		}
-		account, err := s.queries.CreateFinancialAccount(ctx, catalogdb.CreateFinancialAccountParams{Name: name, Code: code})
-		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		account, err := s.createFinancialAccount(ctx, name, code)
+		if errors.Is(err, errAccountCodeInUse) {
 			return nil, httpapi.NewProblem(http.StatusConflict, "financial_account_code_in_use", "This Financial Account code is already in use.")
 		}
 		if err != nil {
 			return nil, catalogUnavailable(ctx, err)
 		}
-		return &financialAccountOutput{CacheControl: "no-store", Body: accountFromDB(account)}, nil
+		return &financialAccountOutput{CacheControl: "no-store", Body: account}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "edit-financial-account",
@@ -167,16 +157,14 @@ func (s *Service) registerCatalogWrites(api huma.API, identities *identity.Servi
 		if name == "" {
 			return nil, invalidCatalogEntry()
 		}
-		account, err := s.queries.RenameFinancialAccount(ctx, catalogdb.RenameFinancialAccountParams{
-			ID: pgtype.UUID{Bytes: id, Valid: true}, Name: name,
-		})
-		if errors.Is(err, pgx.ErrNoRows) {
+		account, err := s.renameFinancialAccount(ctx, pgtype.UUID{Bytes: id, Valid: true}, name)
+		if errors.Is(err, ErrFinancialAccountNotFound) {
 			return nil, catalogNotFound("financial_account_not_found", "Financial Account")
 		}
 		if err != nil {
 			return nil, catalogUnavailable(ctx, err)
 		}
-		return &financialAccountOutput{CacheControl: "no-store", Body: accountFromDB(account)}, nil
+		return &financialAccountOutput{CacheControl: "no-store", Body: account}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-source",
@@ -194,11 +182,11 @@ func (s *Service) registerCatalogWrites(api huma.API, identities *identity.Servi
 		if name == "" {
 			return nil, invalidCatalogEntry()
 		}
-		source, err := s.queries.CreateSource(ctx, catalogdb.CreateSourceParams{Name: name, Side: in.Body.Side})
+		source, err := s.createSource(ctx, name, in.Body.Side)
 		if err != nil {
 			return nil, catalogUnavailable(ctx, err)
 		}
-		return &sourceOutput{CacheControl: "no-store", Body: sourceEntry{Source: sourceFromDB(source), SideEditable: true}}, nil
+		return &sourceOutput{CacheControl: "no-store", Body: source}, nil
 	})
 	huma.Register(api, huma.Operation{
 		OperationID: "edit-source",
@@ -227,7 +215,7 @@ func (s *Service) registerCatalogWrites(api huma.API, identities *identity.Servi
 		}
 		entry, err := s.editSource(ctx, pgtype.UUID{Bytes: id, Valid: true}, in.Body.Name, in.Body.Side)
 		switch {
-		case errors.Is(err, pgx.ErrNoRows):
+		case errors.Is(err, ErrSourceNotFound):
 			return nil, catalogNotFound("source_not_found", "Source")
 		case errors.Is(err, errSourceSideLocked):
 			return nil, httpapi.NewProblem(http.StatusConflict, "source_side_locked", "The Source side is locked by a confirmed import.")

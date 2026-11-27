@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog/catalogdb"
@@ -16,6 +17,7 @@ var (
 	ErrSourceNotFound           = errors.New("source not found")
 	ErrFinancialAccountNotFound = errors.New("financial account not found")
 	errSourceSideLocked         = errors.New("source side is locked")
+	errAccountCodeInUse         = errors.New("financial account code is already in use")
 )
 
 type FinancialAccount struct {
@@ -71,11 +73,56 @@ func (s *Service) ListFinancialAccounts(ctx context.Context) ([]FinancialAccount
 	return result, nil
 }
 
+func (s *Service) listSources(ctx context.Context) ([]sourceEntry, error) {
+	sources, err := s.queries.ListSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]sourceEntry, 0, len(sources))
+	for _, source := range sources {
+		result = append(result, sourceEntry{Source: Source{ID: source.ID.String(), Name: source.Name, Side: source.Side}, SideEditable: source.SideEditable})
+	}
+	return result, nil
+}
+
+func (s *Service) createFinancialAccount(ctx context.Context, name, code string) (FinancialAccount, error) {
+	account, err := s.queries.CreateFinancialAccount(ctx, catalogdb.CreateFinancialAccountParams{Name: name, Code: code})
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		return FinancialAccount{}, errAccountCodeInUse
+	}
+	if err != nil {
+		return FinancialAccount{}, err
+	}
+	return accountFromDB(account), nil
+}
+
+func (s *Service) renameFinancialAccount(ctx context.Context, id pgtype.UUID, name string) (FinancialAccount, error) {
+	account, err := s.queries.RenameFinancialAccount(ctx, catalogdb.RenameFinancialAccountParams{ID: id, Name: name})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FinancialAccount{}, ErrFinancialAccountNotFound
+	}
+	if err != nil {
+		return FinancialAccount{}, err
+	}
+	return accountFromDB(account), nil
+}
+
+func (s *Service) createSource(ctx context.Context, name, side string) (sourceEntry, error) {
+	source, err := s.queries.CreateSource(ctx, catalogdb.CreateSourceParams{Name: name, Side: side})
+	if err != nil {
+		return sourceEntry{}, err
+	}
+	return sourceEntry{Source: sourceFromDB(source), SideEditable: true}, nil
+}
+
 func (s *Service) editSource(ctx context.Context, id pgtype.UUID, name, side *string) (sourceEntry, error) {
 	var entry sourceEntry
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := s.queries.WithTx(tx)
 		source, err := queries.LockSourceForEdit(ctx, id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrSourceNotFound
+		}
 		if err != nil {
 			return err
 		}

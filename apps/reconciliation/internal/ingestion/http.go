@@ -98,7 +98,7 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 			input.file = &decodedUpload{fingerprint: sha256.Sum256(data), rows: rows, issues: issues}
 		}
 		staged, err := s.createPreview(ctx, userID, input)
-		if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+		if problem := importHTTPError(err); problem != nil {
 			return nil, problem
 		}
 		if err != nil {
@@ -161,7 +161,7 @@ func (s *Service) RegisterHTTP(api huma.API, identities *identity.Service) {
 		case errors.Is(err, errImportResolved):
 			return nil, importAlreadyResolved()
 		case err != nil:
-			if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+			if problem := importHTTPError(err); problem != nil {
 				return nil, problem
 			}
 			return nil, previewUnavailable(ctx, err)
@@ -216,7 +216,7 @@ func (s *Service) resolveImport(ctx context.Context, identities *identity.Servic
 	case errors.Is(err, errImportResolved):
 		return nil, importAlreadyResolved()
 	case err != nil:
-		if problem, ok := errors.AsType[*httpapi.Problem](err); ok {
+		if problem := importHTTPError(err); problem != nil {
 			return nil, problem
 		}
 		slog.ErrorContext(ctx, "Could not resolve import", "error", err)
@@ -225,9 +225,39 @@ func (s *Service) resolveImport(ctx context.Context, identities *identity.Servic
 	return &previewOutput{Status: http.StatusOK, CacheControl: "no-store", Body: receipt}, nil
 }
 
-func importProblem(code, detail string, issues ...httpapi.Issue) *httpapi.Problem {
-	problem := httpapi.NewProblem(http.StatusUnprocessableEntity, code, detail)
-	problem.Issues = issues
+func importHTTPError(err error) *httpapi.Problem {
+	if failure, ok := errors.AsType[*invalidImport](err); ok {
+		problem := httpapi.NewProblem(http.StatusUnprocessableEntity, failure.code, failure.detail)
+		for _, issue := range failure.issues {
+			problem.Issues = append(problem.Issues, httpapi.Issue{
+				Line: issue.Line, Field: issue.Field, Reason: issue.Reason, Value: issue.Value,
+			})
+		}
+		return problem
+	}
+	if failure, ok := errors.AsType[*conflictsChanged](err); ok {
+		return importConflictHTTPError("import_conflicts_changed", "The conflicts changed. Review the updated preview.", failure.preview)
+	}
+	if failure, ok := errors.AsType[*conflictsRequireReview](err); ok {
+		return importConflictHTTPError("import_conflicts_require_review", "Review the conflicts before confirming.", failure.preview)
+	}
+	if failure, ok := errors.AsType[*sourceSideChanged](err); ok {
+		problem := httpapi.NewProblem(http.StatusConflict, "source_side_changed", "The Source side changed since preview.")
+		problem.Context = importProblemContext{PreviewSourceSide: failure.previewSide, CurrentSourceSide: failure.currentSide}
+		return problem
+	}
+	if failure, ok := errors.AsType[*coverageBlocked](err); ok {
+		problem := httpapi.NewProblem(http.StatusConflict, "import_coverage_overlap",
+			"The coverage dates overlap an earlier import, and at least one file has rows without Source References.")
+		problem.Context = importProblemContext{Coverage: &failure.overlap}
+		return problem
+	}
+	return nil
+}
+
+func importConflictHTTPError(code, detail string, preview importView) *httpapi.Problem {
+	problem := httpapi.NewProblem(http.StatusConflict, code, detail)
+	problem.Context = importProblemContext{Preview: &preview}
 	return problem
 }
 
