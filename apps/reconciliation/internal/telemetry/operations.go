@@ -125,14 +125,17 @@ func StartJob(ctx context.Context, work Work, metadata []byte) (context.Context,
 }
 
 type RankingObservation struct {
-	Provider       string
-	Model          string
-	Attempted      bool
-	Duration       time.Duration
-	StartedAt      time.Time
-	FallbackReason string
-	InputTokens    *int64
-	OutputTokens   *int64
+	Provider           string
+	Model              string
+	Attempted          bool
+	Duration           time.Duration
+	StartedAt          time.Time
+	FallbackReason     string
+	InvalidReason      string
+	ExpectedCandidates int
+	ReturnedCandidates *int
+	InputTokens        *int64
+	OutputTokens       *int64
 }
 
 func (s *Runtime) ObserveRanking(ctx context.Context, event RankingObservation) {
@@ -170,6 +173,14 @@ func (s *Runtime) ObserveRanking(ctx context.Context, event RankingObservation) 
 			span.SetStatus(codes.Error, event.FallbackReason)
 		}
 		logAttrs = append(logAttrs, slog.String("fallback_reason", event.FallbackReason))
+	}
+	if event.InvalidReason != "" {
+		span.SetAttributes(attribute.String("invalid_reason", event.InvalidReason), attribute.Int("expected_candidates", event.ExpectedCandidates))
+		logAttrs = append(logAttrs, slog.String("invalid_reason", event.InvalidReason), slog.Int("expected_candidates", event.ExpectedCandidates))
+		if event.ReturnedCandidates != nil {
+			span.SetAttributes(attribute.Int("returned_candidates", *event.ReturnedCandidates))
+			logAttrs = append(logAttrs, slog.Int("returned_candidates", *event.ReturnedCandidates))
+		}
 	}
 	if event.InputTokens != nil {
 		s.rankingTokens.Add(ctx, *event.InputTokens, metric.WithAttributes(provider, model, attribute.String("direction", "input")))

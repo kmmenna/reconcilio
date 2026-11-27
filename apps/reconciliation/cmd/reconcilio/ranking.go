@@ -43,6 +43,7 @@ func rankingObserver(signals *telemetry.Runtime) func(context.Context, reconcili
 		observation := telemetry.RankingObservation{
 			Provider: event.Provider, Model: event.Model, Attempted: event.Attempted,
 			StartedAt: event.StartedAt, Duration: event.Duration, FallbackReason: event.FallbackReason,
+			InvalidReason: event.InvalidReason, ExpectedCandidates: event.ExpectedCandidates, ReturnedCandidates: event.ReturnedCandidates,
 		}
 		if event.Usage != nil {
 			observation.InputTokens = &event.Usage.InputTokens
