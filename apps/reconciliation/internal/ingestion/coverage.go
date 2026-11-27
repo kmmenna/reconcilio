@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/catalog"
-	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/ingestion/ingestiondb"
 )
 
@@ -78,13 +76,10 @@ func checkCoverage(ctx context.Context, queries *ingestiondb.Queries, params ing
 	if err != nil {
 		return fmt.Errorf("check import coverage: %w", err)
 	}
-	problem := httpapi.NewProblem(http.StatusConflict, "import_coverage_overlap",
-		"The coverage dates overlap an earlier import, and at least one file has rows without Source References.")
-	problem.Context = importProblemContext{Coverage: &coverageOverlap{
+	return &coverageBlocked{overlap: coverageOverlap{
 		ImportID: prior.ImportID.String(), FinancialAccount: account,
 		PeriodStart: prior.PeriodStart.Time.Format(time.DateOnly), PeriodEnd: prior.PeriodEnd.Time.Format(time.DateOnly),
 		PreviousHasSourceReferences: prior.AllHaveSourceReferences,
 		IncomingHasSourceReferences: params.IncomingHasSourceReferences,
 	}}
-	return problem
 }

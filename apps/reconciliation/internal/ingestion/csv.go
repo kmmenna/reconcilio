@@ -7,8 +7,6 @@ import (
 	"io"
 	"slices"
 	"unicode/utf8"
-
-	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 )
 
 const (
@@ -36,32 +34,32 @@ var csvColumns = [...]string{
 
 const financialAccountColumn = "financial_account"
 
-func decodeCSV(data []byte, mixed bool) ([]decodedRow, []httpapi.Issue) {
+func decodeCSV(data []byte, mixed bool) ([]decodedRow, []importIssue) {
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
-		return nil, []httpapi.Issue{rowIssue(0, "file", "invalid_encoding")}
+		return nil, []importIssue{rowIssue(0, "file", "invalid_encoding")}
 	}
 
 	reader := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))))
 	header, err := reader.Read()
 	if err != nil || len(header) != len(csvColumns) && (!mixed || len(header) != len(csvColumns)+1) {
-		return nil, []httpapi.Issue{rowIssue(1, "header", "invalid_header")}
+		return nil, []importIssue{rowIssue(1, "header", "invalid_header")}
 	}
 	headerLine, _ := reader.FieldPos(0)
 	var columns [len(csvColumns)]int
 	for i, name := range csvColumns {
 		columns[i] = slices.Index(header, name)
 		if columns[i] < 0 {
-			return nil, []httpapi.Issue{rowIssue(headerLine, "header", "invalid_header")}
+			return nil, []importIssue{rowIssue(headerLine, "header", "invalid_header")}
 		}
 	}
 
 	accountColumn := slices.Index(header, financialAccountColumn)
 	if len(header) > len(csvColumns) && accountColumn < 0 {
-		return nil, []httpapi.Issue{rowIssue(headerLine, "header", "invalid_header")}
+		return nil, []importIssue{rowIssue(headerLine, "header", "invalid_header")}
 	}
 
 	var rows []decodedRow
-	var issues []httpapi.Issue
+	var issues []importIssue
 	for count := 0; ; count++ {
 		record, err := reader.Read()
 		if errors.Is(err, io.EOF) {
@@ -83,7 +81,7 @@ func decodeCSV(data []byte, mixed bool) ([]decodedRow, []httpapi.Issue) {
 			continue
 		}
 		if err != nil {
-			return nil, []httpapi.Issue{rowIssue(0, "file", "invalid_record")}
+			return nil, []importIssue{rowIssue(0, "file", "invalid_record")}
 		}
 
 		line, _ := reader.FieldPos(0)

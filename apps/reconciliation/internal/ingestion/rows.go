@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/httpapi"
 	"github.com/kmmenna/reconcilio/apps/reconciliation/internal/money"
 )
 
@@ -44,7 +43,7 @@ func parseDate(value string) (time.Time, bool) {
 	return date, err == nil && len(value) == len(time.DateOnly) && date.Year() > 0
 }
 
-func validatePreviewRows(file *decodedUpload, period coveragePeriod, accountsByCode map[string]string) ([]stagedRow, []httpapi.Issue) {
+func validatePreviewRows(file *decodedUpload, period coveragePeriod, accountsByCode map[string]string) ([]stagedRow, []importIssue) {
 	var rows []stagedRow
 	issues := slices.Clone(file.issues)
 	for _, raw := range file.rows {
@@ -74,7 +73,7 @@ func validatePreviewRows(file *decodedUpload, period coveragePeriod, accountsByC
 			case code == "":
 				issues = append(issues, rowIssue(raw.line, financialAccountColumn, "missing_financial_account"))
 			case accountID == "":
-				issues = append(issues, httpapi.Issue{
+				issues = append(issues, importIssue{
 					Line: raw.line, Field: financialAccountColumn, Reason: "unknown_financial_account", Value: code,
 				})
 			}
@@ -93,12 +92,12 @@ func validatePreviewRows(file *decodedUpload, period coveragePeriod, accountsByC
 			})
 		}
 	}
-	slices.SortStableFunc(issues, func(a, b httpapi.Issue) int { return cmp.Compare(a.Line, b.Line) })
+	slices.SortStableFunc(issues, func(a, b importIssue) int { return cmp.Compare(a.Line, b.Line) })
 	return rows, issues[:min(len(issues), maxRowIssues)]
 }
 
-func rowIssue(line int, field, reason string) httpapi.Issue {
-	return httpapi.Issue{Line: line, Field: field, Reason: reason}
+func rowIssue(line int, field, reason string) importIssue {
+	return importIssue{Line: line, Field: field, Reason: reason}
 }
 
 func dateIssue(value string, period coveragePeriod) string {
@@ -130,12 +129,12 @@ func assignRowAccounts(rows []stagedRow, accounts []importAccount) error {
 	return nil
 }
 
-func coverageDateIssues(rows []stagedRow, accounts []importAccount) []httpapi.Issue {
+func coverageDateIssues(rows []stagedRow, accounts []importAccount) []importIssue {
 	periods := make(map[string]coveragePeriod, len(accounts))
 	for _, account := range accounts {
 		periods[account.entry.ID] = account.coverage
 	}
-	var issues []httpapi.Issue
+	var issues []importIssue
 	for _, row := range rows {
 		period := periods[row.FinancialAccountID]
 		if reason := dateIssue(row.TransactionDate, period); reason != "" {
