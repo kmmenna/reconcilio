@@ -139,7 +139,7 @@ func readRankingResponse(response *http.Response) (reconciliation.RankingResult,
 		return reconciliation.RankingResult{}, fmt.Errorf("read OpenAI Responses reply: %w", err)
 	}
 	if len(data) > maxResponseBytes {
-		return reconciliation.RankingResult{}, reconciliation.ErrInvalidRanking
+		return reconciliation.RankingResult{InvalidReason: "response_body_too_large"}, reconciliation.ErrInvalidRanking
 	}
 	var envelope responseEnvelope
 	decodeErr := json.Unmarshal(data, &envelope)
@@ -148,6 +148,7 @@ func readRankingResponse(response *http.Response) (reconciliation.RankingResult,
 		return result, fmt.Errorf("OpenAI Responses returned HTTP status %d", response.StatusCode)
 	}
 	if decodeErr != nil {
+		result.InvalidReason = "invalid_response_envelope"
 		return result, reconciliation.ErrInvalidRanking
 	}
 	if envelope.Status == "incomplete" {
@@ -170,7 +171,12 @@ func readRankingResponse(response *http.Response) (reconciliation.RankingResult,
 			case "refusal":
 				return result, reconciliation.ErrRankingRefused
 			case "output_text":
-				if part.Text == "" || outputText != "" {
+				if part.Text == "" {
+					result.InvalidReason = "empty_output_text"
+					return result, reconciliation.ErrInvalidRanking
+				}
+				if outputText != "" {
+					result.InvalidReason = "multiple_output_text_parts"
 					return result, reconciliation.ErrInvalidRanking
 				}
 				outputText = part.Text
@@ -178,12 +184,28 @@ func readRankingResponse(response *http.Response) (reconciliation.RankingResult,
 		}
 	}
 
+	if outputText == "" {
+		result.InvalidReason = "missing_output_text"
+		return result, reconciliation.ErrInvalidRanking
+	}
 	var output struct {
 		Ranking []reconciliation.CandidateAssessment `json:"ranking"`
 	}
-	if err := json.Unmarshal([]byte(outputText), &output, json.RejectUnknownMembers(true)); err != nil || len(output.Ranking) == 0 {
+	if err := json.Unmarshal([]byte(outputText), &output, json.RejectUnknownMembers(true)); err != nil {
+		result.InvalidReason = "invalid_ranking_schema"
+		if _, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
+			result.InvalidReason = "invalid_ranking_json"
+		}
 		return result, reconciliation.ErrInvalidRanking
 	}
 	result.Ranking = output.Ranking
+	if output.Ranking == nil {
+		result.InvalidReason = "missing_ranking"
+		return result, reconciliation.ErrInvalidRanking
+	}
+	if len(output.Ranking) == 0 {
+		result.InvalidReason = "empty_ranking"
+		return result, reconciliation.ErrInvalidRanking
+	}
 	return result, nil
 }
