@@ -106,8 +106,10 @@ func TestImportWorkerAndRankingConsoleTelemetry(t *testing.T) {
 	options := reconciliation.DefaultRankingOptions()
 	options.Model = "configured-test-model"
 	options.Observe = rankingObserver(signals)
+	const privateExplanation = "analyst-private-name@example.test"
 	options.Ranker = rankingDouble(func(_ context.Context, input reconciliation.RankingInput) (reconciliation.RankingResult, error) {
 		result := rankedInput(input)
+		result.Ranking[0].Explanations.Portuguese = privateExplanation
 		result.Ranking[0].Explanations.English = ""
 		result.Model = "reported-test-model"
 		result.Usage = &reconciliation.RankingUsage{InputTokens: 50, OutputTokens: 82}
@@ -235,7 +237,8 @@ func TestImportWorkerAndRankingConsoleTelemetry(t *testing.T) {
 			t.Errorf("missing %s with %q", observed.message, observed.values)
 		}
 	}
-	for _, private := range []string{"Canva subscription for the design team", "test-job-analyst", token} {
+	assertRankingValidationLog(t, console, workflow)
+	for _, private := range []string{"Canva subscription for the design team", "test-job-analyst", token, privateExplanation} {
 		if strings.Contains(console, private) {
 			t.Error("console exposed a sensitive input")
 		}
@@ -318,4 +321,34 @@ func latestConsoleMetrics(t *testing.T, console, prefix string) map[string]int64
 		}
 	}
 	return points
+}
+
+func assertRankingValidationLog(t *testing.T, console, workflow string) {
+	t.Helper()
+	for line := range strings.SplitSeq(console, "\n") {
+		if !strings.Contains(line, workflow) || !strings.Contains(line, "AI ranking") {
+			continue
+		}
+		var log struct {
+			Attributes []struct {
+				Key   string
+				Value struct {
+					Value any
+				}
+			}
+		}
+		if err := json.Unmarshal([]byte(line), &log); err != nil {
+			t.Fatal(err)
+		}
+		attributes := make(map[string]any, len(log.Attributes))
+		for _, attr := range log.Attributes {
+			attributes[attr.Key] = attr.Value.Value
+		}
+		if attributes["invalid_reason"] != "en_explanation_missing" ||
+			attributes["expected_candidates"] != float64(2) || attributes["returned_candidates"] != float64(2) {
+			t.Fatal("AI ranking log did not report a missing English explanation and the candidate counts")
+		}
+		return
+	}
+	t.Fatal("AI ranking log was not found for the external import workflow")
 }

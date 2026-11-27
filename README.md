@@ -123,6 +123,8 @@ Each evaluation sends only the redacted descriptions for a complete group. The w
 
 ## Console telemetry
 
+When an AI evaluation falls back with `fallback_reason: invalid_ranking`, look for `invalid_reason` on the same `AI ranking` record. For example, `en_explanation_missing` identifies a missing English explanation, and `candidate_count_mismatch` comes with the expected and returned counts. The event records fixed diagnostic codes and counts without candidate IDs, descriptions, explanations, or raw provider responses.
+
 The API and River worker emit JSON logs to stdout. Set `RECONCILIO_TRACE_STDOUT=true` and `RECONCILIO_METRIC_STDOUT=true` independently to export spans and metrics to the same console. Metrics are collected every 10 seconds.
 
 To observe engine fallback locally, configure the ranking client with a test key and an endpoint that refuses connections inside the backend container.

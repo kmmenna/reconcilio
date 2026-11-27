@@ -58,9 +58,10 @@ type RankingUsage struct {
 
 // RankingResult can carry model and usage metadata even when the provider returns an error.
 type RankingResult struct {
-	Ranking []CandidateAssessment
-	Model   string
-	Usage   *RankingUsage
+	Ranking       []CandidateAssessment
+	Model         string
+	Usage         *RankingUsage
+	InvalidReason string // Fixed adapter code; never include response text or decoder errors.
 }
 
 var (
@@ -72,13 +73,16 @@ var (
 )
 
 type RankingEvent struct {
-	Provider       string
-	Model          string
-	Attempted      bool
-	Duration       time.Duration
-	StartedAt      time.Time
-	Usage          *RankingUsage
-	FallbackReason string
+	Provider           string
+	Model              string
+	Attempted          bool
+	Duration           time.Duration
+	StartedAt          time.Time
+	Usage              *RankingUsage
+	FallbackReason     string
+	InvalidReason      string
+	ExpectedCandidates int
+	ReturnedCandidates *int
 }
 
 type RankingOptions struct {
@@ -151,7 +155,7 @@ type rankedAlternative struct {
 type rankedAlternatives map[pgtype.UUID]rankedAlternative // by external Transaction ID
 
 func (s *Service) evaluateRanking(ctx context.Context, attempt *AccountAttempt, group []reconciliationdb.ListReviewCandidatesRow) (rankedAlternatives, error) {
-	event := RankingEvent{Provider: s.ranking.Provider, Model: s.ranking.Model}
+	event := RankingEvent{Provider: s.ranking.Provider, Model: s.ranking.Model, ExpectedCandidates: len(group)}
 	if s.ranking.Observe != nil {
 		defer func() { s.ranking.Observe(ctx, event) }()
 	}
@@ -209,13 +213,20 @@ func (s *Service) evaluateRanking(ctx context.Context, attempt *AccountAttempt, 
 		event.FallbackReason = "incomplete"
 	case errors.Is(err, ErrInvalidRanking):
 		event.FallbackReason = "invalid_ranking"
+		event.InvalidReason = cmp.Or(result.InvalidReason, "invalid_provider_response")
+		if result.Ranking != nil {
+			event.ReturnedCandidates = new(len(result.Ranking))
+		}
 	case err != nil:
 		event.FallbackReason = "provider_error"
 	default:
-		if alternatives, ok := validateRanking(input, result.Ranking, group); ok {
+		alternatives, reason := validateRanking(input, result.Ranking, group)
+		if reason == "" {
 			return alternatives, nil
 		}
 		event.FallbackReason = "invalid_ranking"
+		event.InvalidReason = reason
+		event.ReturnedCandidates = new(len(result.Ranking))
 	}
 	return nil, nil
 }
@@ -272,9 +283,9 @@ func prepareRankingInput(group []reconciliationdb.ListReviewCandidatesRow) (Rank
 	return input, err == nil && len(data) <= maxRankingInputBytes
 }
 
-func validateRanking(input RankingInput, result []CandidateAssessment, group []reconciliationdb.ListReviewCandidatesRow) (rankedAlternatives, bool) {
+func validateRanking(input RankingInput, result []CandidateAssessment, group []reconciliationdb.ListReviewCandidatesRow) (rankedAlternatives, string) {
 	if len(input.Candidates) != len(result) {
-		return nil, false
+		return nil, "candidate_count_mismatch"
 	}
 	supplied := make(map[string]reconciliationdb.ListReviewCandidatesRow, len(group))
 	for i, candidate := range input.Candidates {
@@ -283,31 +294,57 @@ func validateRanking(input RankingInput, result []CandidateAssessment, group []r
 	validated := make(rankedAlternatives, len(result))
 	for i, assessment := range result {
 		pair, known := supplied[assessment.CandidateID]
-		if !known || assessment.Score == nil || *assessment.Score < 0 || *assessment.Score > 100 {
-			return nil, false
+		if !known {
+			return nil, "unknown_candidate_id"
 		}
-		pt := strings.TrimSpace(assessment.Explanations.Portuguese)
-		en := strings.TrimSpace(assessment.Explanations.English)
-		if !validExplanation(pt) || !validExplanation(en) {
-			return nil, false
+		if _, duplicate := validated[pair.ExternalID]; duplicate {
+			return nil, "duplicate_candidate_id"
 		}
-		explanations := RankingExplanations{
-			Portuguese: cleanRankingExplanation(pt, "[dado ocultado]"),
-			English:    cleanRankingExplanation(en, "[redacted detail]"),
+		if assessment.Score == nil {
+			return nil, "missing_score"
 		}
-		if !validExplanation(explanations.Portuguese) || !validExplanation(explanations.English) {
-			return nil, false
+		if *assessment.Score < 0 || *assessment.Score > 100 {
+			return nil, "score_out_of_range"
+		}
+		pt, reason := validateExplanation(assessment.Explanations.Portuguese, "[dado ocultado]")
+		if reason != "" {
+			return nil, "pt_br_explanation_" + reason
+		}
+		en, reason := validateExplanation(assessment.Explanations.English, "[redacted detail]")
+		if reason != "" {
+			return nil, "en_explanation_" + reason
 		}
 		validated[pair.ExternalID] = rankedAlternative{
-			ProposalID: pair.ProposalID, Rank: int32(i + 1), Score: int32(*assessment.Score), Explanations: explanations,
+			ProposalID: pair.ProposalID, Rank: int32(i + 1), Score: int32(*assessment.Score),
+			Explanations: RankingExplanations{Portuguese: pt, English: en},
 		}
-		delete(supplied, assessment.CandidateID)
 	}
-	return validated, true
+	return validated, ""
 }
 
-func validExplanation(value string) bool {
-	return value != "" && utf8.ValidString(value) && !strings.ContainsRune(value, 0) && utf8.RuneCountInString(value) <= maxExplanationRunes
+func validateExplanation(value, replacement string) (string, string) {
+	value = strings.TrimSpace(value)
+	if reason := explanationIssue(value); reason != "" {
+		return "", reason
+	}
+	value = cleanRankingExplanation(value, replacement)
+	if reason := explanationIssue(value); reason != "" {
+		return "", reason + "_after_redaction"
+	}
+	return value, ""
+}
+
+func explanationIssue(value string) string {
+	switch {
+	case value == "":
+		return "missing"
+	case !utf8.ValidString(value) || strings.ContainsRune(value, 0):
+		return "invalid_text"
+	case utf8.RuneCountInString(value) > maxExplanationRunes:
+		return "too_long"
+	default:
+		return ""
+	}
 }
 
 func reviewGroups(pairs []reconciliationdb.ListReviewCandidatesRow) iter.Seq[[]reconciliationdb.ListReviewCandidatesRow] {

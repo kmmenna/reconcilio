@@ -73,11 +73,15 @@ func TestResponsesFallbackKeepsReportedUsage(t *testing.T) {
 	for _, tc := range []struct {
 		name, response string
 		want           error
+		invalidReason  string
 	}{
-		{"refusal", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"cannot rank"}]}]`, reconciliation.ErrRankingRefused},
-		{"incomplete", `"status":"incomplete"`, reconciliation.ErrRankingIncomplete},
-		{"ambiguous output", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{}"},{"type":"output_text","text":"{}"}]}]`, reconciliation.ErrInvalidRanking},
-		{"malformed ranking", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"not json"}]}]`, reconciliation.ErrInvalidRanking},
+		{"refusal", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"cannot rank"}]}]`, reconciliation.ErrRankingRefused, ""},
+		{"incomplete", `"status":"incomplete"`, reconciliation.ErrRankingIncomplete, ""},
+		{"ambiguous output", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{}"},{"type":"output_text","text":"{}"}]}]`, reconciliation.ErrInvalidRanking, "multiple_output_text_parts"},
+		{"malformed ranking", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"not json"}]}]`, reconciliation.ErrInvalidRanking, "invalid_ranking_json"},
+		{"unexpected ranking field", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"ranking\":[],\"analyst-private@example.test\":true}"}]}]`, reconciliation.ErrInvalidRanking, "invalid_ranking_schema"},
+		{"missing output", `"status":"completed","output":[{"type":"reasoning"}]`, reconciliation.ErrInvalidRanking, "missing_output_text"},
+		{"missing ranking", `"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{}"}]}]`, reconciliation.ErrInvalidRanking, "missing_ranking"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +93,7 @@ func TestResponsesFallbackKeepsReportedUsage(t *testing.T) {
 				t.Fatal(err)
 			}
 			result, err := client.Rank(t.Context(), reconciliation.RankingInput{})
-			if !errors.Is(err, tc.want) || result.Model != "snapshot" || result.Usage == nil || result.Usage.OutputTokens != 20 {
+			if !errors.Is(err, tc.want) || result.Model != "snapshot" || result.Usage == nil || result.Usage.OutputTokens != 20 || result.InvalidReason != tc.invalidReason {
 				t.Fatalf("got result %+v and error %v, want %v with usage", result, err, tc.want)
 			}
 		})
